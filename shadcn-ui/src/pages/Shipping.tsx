@@ -18,6 +18,18 @@ export default function Shipping() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
 
+  // حالات النموذج
+  const [formData, setFormData] = useState({
+    shipmentNumber: '',
+    containerNumber: '',
+    billOfLading: '',
+    status: '' as Shipment['status'] | '',
+    departureDate: '',
+    arrivalDate: '',
+    shippingCost: '',
+    customsFees: ''
+  });
+
   const filteredShipments = shipments.filter(shipment =>
     shipment.shipmentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     shipment.containerNumber.toLowerCase().includes(searchTerm.toLowerCase())
@@ -54,18 +66,80 @@ export default function Shipping() {
     }
   };
 
+  const resetForm = () => {
+    setFormData({
+      shipmentNumber: '',
+      containerNumber: '',
+      billOfLading: '',
+      status: '',
+      departureDate: '',
+      arrivalDate: '',
+      shippingCost: '',
+      customsFees: ''
+    });
+  };
+
   const handleAddShipment = () => {
     setEditingShipment(null);
+    resetForm();
+    setFormData(prev => ({
+      ...prev,
+      shipmentNumber: AutoNumberGenerator.generateShipmentNumber(),
+      containerNumber: AutoNumberGenerator.generateContainerNumber(),
+      billOfLading: AutoNumberGenerator.generateBillOfLading()
+    }));
     setIsDialogOpen(true);
   };
 
   const handleEditShipment = (shipment: Shipment) => {
     setEditingShipment(shipment);
+    setFormData({
+      shipmentNumber: shipment.shipmentNumber,
+      containerNumber: shipment.containerNumber,
+      billOfLading: shipment.billOfLading,
+      status: shipment.status,
+      departureDate: shipment.departureDate.toISOString().split('T')[0],
+      arrivalDate: shipment.arrivalDate ? shipment.arrivalDate.toISOString().split('T')[0] : '',
+      shippingCost: shipment.shippingCost.toString(),
+      customsFees: shipment.customsFees.toString()
+    });
     setIsDialogOpen(true);
   };
 
+  const handleSaveShipment = () => {
+    if (!formData.shipmentNumber || !formData.containerNumber || !formData.status || !formData.departureDate) {
+      alert('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+
+    const newShipment: Shipment = {
+      id: editingShipment?.id || Date.now().toString(),
+      shipmentNumber: formData.shipmentNumber,
+      containerNumber: formData.containerNumber,
+      billOfLading: formData.billOfLading,
+      status: formData.status as Shipment['status'],
+      departureDate: new Date(formData.departureDate),
+      arrivalDate: formData.arrivalDate ? new Date(formData.arrivalDate) : null,
+      shippingCost: parseFloat(formData.shippingCost) || 0,
+      customsFees: parseFloat(formData.customsFees) || 0
+    };
+
+    if (editingShipment) {
+      setShipments(shipments.map(shipment => 
+        shipment.id === editingShipment.id ? newShipment : shipment
+      ));
+    } else {
+      setShipments([...shipments, newShipment]);
+    }
+
+    setIsDialogOpen(false);
+    resetForm();
+  };
+
   const handleDeleteShipment = (shipmentId: string) => {
-    setShipments(shipments.filter(shipment => shipment.id !== shipmentId));
+    if (confirm('هل أنت متأكد من حذف هذه الشحنة؟')) {
+      setShipments(shipments.filter(shipment => shipment.id !== shipmentId));
+    }
   };
 
   const totalShipments = shipments.length;
@@ -263,7 +337,7 @@ export default function Shipping() {
               <Label htmlFor="shipmentNumber">رقم الشحنة</Label>
               <Input 
                 id="shipmentNumber" 
-                value={editingShipment?.shipmentNumber || AutoNumberGenerator.generateShipmentNumber()}
+                value={formData.shipmentNumber}
                 disabled
                 className="bg-gray-50"
               />
@@ -272,7 +346,7 @@ export default function Shipping() {
               <Label htmlFor="containerNumber">رقم الحاوية</Label>
               <Input 
                 id="containerNumber" 
-                value={editingShipment?.containerNumber || AutoNumberGenerator.generateContainerNumber()}
+                value={formData.containerNumber}
                 disabled
                 className="bg-gray-50"
               />
@@ -281,14 +355,14 @@ export default function Shipping() {
               <Label htmlFor="billOfLading">بوليصة الشحن</Label>
               <Input 
                 id="billOfLading" 
-                value={editingShipment?.billOfLading || AutoNumberGenerator.generateBillOfLading()}
+                value={formData.billOfLading}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="status">حالة الشحنة</Label>
-              <Select>
+              <Label htmlFor="status">حالة الشحنة *</Label>
+              <Select value={formData.status} onValueChange={(value: Shipment['status']) => setFormData(prev => ({...prev, status: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر حالة الشحنة" />
                 </SelectTrigger>
@@ -301,27 +375,49 @@ export default function Shipping() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="departureDate">تاريخ المغادرة</Label>
-              <Input id="departureDate" type="date" />
+              <Label htmlFor="departureDate">تاريخ المغادرة *</Label>
+              <Input 
+                id="departureDate" 
+                type="date"
+                value={formData.departureDate}
+                onChange={(e) => setFormData(prev => ({...prev, departureDate: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="arrivalDate">تاريخ الوصول المتوقع</Label>
-              <Input id="arrivalDate" type="date" />
+              <Input 
+                id="arrivalDate" 
+                type="date"
+                value={formData.arrivalDate}
+                onChange={(e) => setFormData(prev => ({...prev, arrivalDate: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="shippingCost">تكلفة الشحن</Label>
-              <Input id="shippingCost" type="number" placeholder="أدخل تكلفة الشحن" />
+              <Input 
+                id="shippingCost" 
+                type="number" 
+                placeholder="أدخل تكلفة الشحن"
+                value={formData.shippingCost}
+                onChange={(e) => setFormData(prev => ({...prev, shippingCost: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="customsFees">الرسوم الجمركية</Label>
-              <Input id="customsFees" type="number" placeholder="أدخل الرسوم الجمركية" />
+              <Input 
+                id="customsFees" 
+                type="number" 
+                placeholder="أدخل الرسوم الجمركية"
+                value={formData.customsFees}
+                onChange={(e) => setFormData(prev => ({...prev, customsFees: e.target.value}))}
+              />
             </div>
           </div>
           <div className="flex justify-end space-x-2 space-x-reverse mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>
-            <Button onClick={() => setIsDialogOpen(false)}>
+            <Button onClick={handleSaveShipment}>
               {editingShipment ? 'حفظ التعديل' : 'إضافة الشحنة'}
             </Button>
           </div>

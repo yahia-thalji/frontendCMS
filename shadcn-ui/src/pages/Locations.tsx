@@ -20,6 +20,16 @@ export default function Locations() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
+  // حالات النموذج
+  const [formData, setFormData] = useState({
+    locationNumber: '',
+    name: '',
+    type: '' as Location['type'] | '',
+    capacity: '',
+    currentStock: '',
+    description: ''
+  });
+
   const filteredLocations = locations.filter(location =>
     location.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -56,18 +66,71 @@ export default function Locations() {
     return 'text-green-600';
   };
 
+  const resetForm = () => {
+    setFormData({
+      locationNumber: '',
+      name: '',
+      type: '',
+      capacity: '',
+      currentStock: '',
+      description: ''
+    });
+  };
+
   const handleAddLocation = () => {
     setEditingLocation(null);
+    resetForm();
+    setFormData(prev => ({
+      ...prev,
+      locationNumber: AutoNumberGenerator.generateLocationNumber()
+    }));
     setIsDialogOpen(true);
   };
 
   const handleEditLocation = (location: Location) => {
     setEditingLocation(location);
+    setFormData({
+      locationNumber: `LOC-2024-${location.id.padStart(3, '0')}`,
+      name: location.name,
+      type: location.type,
+      capacity: location.capacity.toString(),
+      currentStock: location.currentStock.toString(),
+      description: location.description || ''
+    });
     setIsDialogOpen(true);
   };
 
+  const handleSaveLocation = () => {
+    if (!formData.name || !formData.type || !formData.capacity) {
+      alert('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+
+    const newLocation: Location = {
+      id: editingLocation?.id || Date.now().toString(),
+      name: formData.name,
+      type: formData.type as Location['type'],
+      capacity: parseInt(formData.capacity) || 0,
+      currentStock: parseInt(formData.currentStock) || 0,
+      description: formData.description
+    };
+
+    if (editingLocation) {
+      setLocations(locations.map(location => 
+        location.id === editingLocation.id ? newLocation : location
+      ));
+    } else {
+      setLocations([...locations, newLocation]);
+    }
+
+    setIsDialogOpen(false);
+    resetForm();
+  };
+
   const handleDeleteLocation = (locationId: string) => {
-    setLocations(locations.filter(location => location.id !== locationId));
+    if (confirm('هل أنت متأكد من حذف هذا الموقع؟')) {
+      setLocations(locations.filter(location => location.id !== locationId));
+    }
   };
 
   const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
@@ -264,18 +327,23 @@ export default function Locations() {
               <Label htmlFor="locationNumber">رقم الموقع</Label>
               <Input 
                 id="locationNumber" 
-                value={editingLocation ? `LOC-2024-${editingLocation.id.padStart(3, '0')}` : AutoNumberGenerator.generateLocationNumber()}
+                value={formData.locationNumber}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="locationName">اسم الموقع</Label>
-              <Input id="locationName" placeholder="أدخل اسم الموقع" />
+              <Label htmlFor="locationName">اسم الموقع *</Label>
+              <Input 
+                id="locationName" 
+                placeholder="أدخل اسم الموقع"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="locationType">نوع الموقع</Label>
-              <Select>
+              <Label htmlFor="locationType">نوع الموقع *</Label>
+              <Select value={formData.type} onValueChange={(value: Location['type']) => setFormData(prev => ({...prev, type: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر نوع الموقع" />
                 </SelectTrigger>
@@ -287,23 +355,40 @@ export default function Locations() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="capacity">السعة القصوى</Label>
-              <Input id="capacity" type="number" placeholder="أدخل السعة القصوى" />
+              <Label htmlFor="capacity">السعة القصوى *</Label>
+              <Input 
+                id="capacity" 
+                type="number" 
+                placeholder="أدخل السعة القصوى"
+                value={formData.capacity}
+                onChange={(e) => setFormData(prev => ({...prev, capacity: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="currentStock">المخزون الحالي</Label>
-              <Input id="currentStock" type="number" placeholder="أدخل المخزون الحالي" />
+              <Input 
+                id="currentStock" 
+                type="number" 
+                placeholder="أدخل المخزون الحالي"
+                value={formData.currentStock}
+                onChange={(e) => setFormData(prev => ({...prev, currentStock: e.target.value}))}
+              />
             </div>
             <div className="col-span-2 space-y-2">
               <Label htmlFor="description">الوصف</Label>
-              <Textarea id="description" placeholder="أدخل وصف الموقع (اختياري)" />
+              <Textarea 
+                id="description" 
+                placeholder="أدخل وصف الموقع (اختياري)"
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
+              />
             </div>
           </div>
           <div className="flex justify-end space-x-2 space-x-reverse mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>
-            <Button onClick={() => setIsDialogOpen(false)}>
+            <Button onClick={handleSaveLocation}>
               {editingLocation ? 'حفظ التعديل' : 'إضافة الموقع'}
             </Button>
           </div>

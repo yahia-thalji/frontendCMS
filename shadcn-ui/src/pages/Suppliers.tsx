@@ -18,23 +18,87 @@ export default function Suppliers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
+  // حالات النموذج
+  const [formData, setFormData] = useState({
+    supplierNumber: '',
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    paymentTerms: ''
+  });
+
   const filteredSuppliers = suppliers.filter(supplier =>
     supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const resetForm = () => {
+    setFormData({
+      supplierNumber: '',
+      name: '',
+      phone: '',
+      email: '',
+      address: '',
+      paymentTerms: ''
+    });
+  };
+
   const handleAddSupplier = () => {
     setEditingSupplier(null);
+    resetForm();
+    setFormData(prev => ({
+      ...prev,
+      supplierNumber: AutoNumberGenerator.generateSupplierNumber()
+    }));
     setIsDialogOpen(true);
   };
 
   const handleEditSupplier = (supplier: Supplier) => {
     setEditingSupplier(supplier);
+    setFormData({
+      supplierNumber: `SUP-2024-${supplier.id.padStart(4, '0')}`,
+      name: supplier.name,
+      phone: supplier.phone,
+      email: supplier.email,
+      address: supplier.address,
+      paymentTerms: supplier.paymentTerms
+    });
     setIsDialogOpen(true);
   };
 
+  const handleSaveSupplier = () => {
+    if (!formData.name || !formData.phone || !formData.email) {
+      alert('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+
+    const newSupplier: Supplier = {
+      id: editingSupplier?.id || Date.now().toString(),
+      name: formData.name,
+      phone: formData.phone,
+      email: formData.email,
+      address: formData.address,
+      paymentTerms: formData.paymentTerms,
+      createdAt: editingSupplier?.createdAt || new Date()
+    };
+
+    if (editingSupplier) {
+      setSuppliers(suppliers.map(supplier => 
+        supplier.id === editingSupplier.id ? newSupplier : supplier
+      ));
+    } else {
+      setSuppliers([...suppliers, newSupplier]);
+    }
+
+    setIsDialogOpen(false);
+    resetForm();
+  };
+
   const handleDeleteSupplier = (supplierId: string) => {
-    setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
+    if (confirm('هل أنت متأكد من حذف هذا المورد؟')) {
+      setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
+    }
   };
 
   return (
@@ -203,37 +267,63 @@ export default function Suppliers() {
               <Label htmlFor="supplierNumber">رقم المورد</Label>
               <Input 
                 id="supplierNumber" 
-                value={editingSupplier ? `SUP-2024-${editingSupplier.id.padStart(4, '0')}` : AutoNumberGenerator.generateSupplierNumber()}
+                value={formData.supplierNumber}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="supplierName">اسم المورد</Label>
-              <Input id="supplierName" placeholder="أدخل اسم المورد" />
+              <Label htmlFor="supplierName">اسم المورد *</Label>
+              <Input 
+                id="supplierName" 
+                placeholder="أدخل اسم المورد"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone">رقم الهاتف</Label>
-              <Input id="phone" placeholder="أدخل رقم الهاتف" />
+              <Label htmlFor="phone">رقم الهاتف *</Label>
+              <Input 
+                id="phone" 
+                placeholder="أدخل رقم الهاتف"
+                value={formData.phone}
+                onChange={(e) => setFormData(prev => ({...prev, phone: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">البريد الإلكتروني</Label>
-              <Input id="email" type="email" placeholder="أدخل البريد الإلكتروني" />
+              <Label htmlFor="email">البريد الإلكتروني *</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="أدخل البريد الإلكتروني"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({...prev, email: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="paymentTerms">شروط الدفع</Label>
-              <Input id="paymentTerms" placeholder="مثال: 30 يوم" />
+              <Input 
+                id="paymentTerms" 
+                placeholder="مثال: 30 يوم"
+                value={formData.paymentTerms}
+                onChange={(e) => setFormData(prev => ({...prev, paymentTerms: e.target.value}))}
+              />
             </div>
             <div className="col-span-2 space-y-2">
               <Label htmlFor="address">العنوان</Label>
-              <Textarea id="address" placeholder="أدخل العنوان الكامل" />
+              <Textarea 
+                id="address" 
+                placeholder="أدخل العنوان الكامل"
+                value={formData.address}
+                onChange={(e) => setFormData(prev => ({...prev, address: e.target.value}))}
+              />
             </div>
           </div>
           <div className="flex justify-end space-x-2 space-x-reverse mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>
-            <Button onClick={() => setIsDialogOpen(false)}>
+            <Button onClick={handleSaveSupplier}>
               {editingSupplier ? 'حفظ التعديل' : 'إضافة المورد'}
             </Button>
           </div>

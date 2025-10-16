@@ -19,6 +19,19 @@ export default function Items() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
+  // حالات النموذج
+  const [formData, setFormData] = useState({
+    name: '',
+    referenceNumber: '',
+    type: '',
+    supplierId: '',
+    price: '',
+    unit: '',
+    specifications: '',
+    quantity: '0',
+    locationId: ''
+  });
+
   const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase())
@@ -35,18 +48,80 @@ export default function Items() {
     return location?.name || 'غير محدد';
   };
 
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      referenceNumber: '',
+      type: '',
+      supplierId: '',
+      price: '',
+      unit: '',
+      specifications: '',
+      quantity: '0',
+      locationId: ''
+    });
+  };
+
   const handleAddItem = () => {
     setEditingItem(null);
+    resetForm();
+    setFormData(prev => ({
+      ...prev,
+      referenceNumber: AutoNumberGenerator.generateItemNumber()
+    }));
     setIsDialogOpen(true);
   };
 
   const handleEditItem = (item: Item) => {
     setEditingItem(item);
+    setFormData({
+      name: item.name,
+      referenceNumber: item.referenceNumber,
+      type: item.type,
+      supplierId: item.supplierId,
+      price: item.price.toString(),
+      unit: item.unit,
+      specifications: item.specifications || '',
+      quantity: item.quantity.toString(),
+      locationId: item.locationId || ''
+    });
     setIsDialogOpen(true);
   };
 
+  const handleSaveItem = () => {
+    if (!formData.name || !formData.type || !formData.supplierId || !formData.price) {
+      alert('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+
+    const newItem: Item = {
+      id: editingItem?.id || Date.now().toString(),
+      name: formData.name,
+      referenceNumber: formData.referenceNumber,
+      type: formData.type,
+      supplierId: formData.supplierId,
+      price: parseFloat(formData.price),
+      unit: formData.unit,
+      specifications: formData.specifications,
+      quantity: parseInt(formData.quantity) || 0,
+      locationId: formData.locationId || undefined,
+      createdAt: editingItem?.createdAt || new Date()
+    };
+
+    if (editingItem) {
+      setItems(items.map(item => item.id === editingItem.id ? newItem : item));
+    } else {
+      setItems([...items, newItem]);
+    }
+
+    setIsDialogOpen(false);
+    resetForm();
+  };
+
   const handleDeleteItem = (itemId: string) => {
-    setItems(items.filter(item => item.id !== itemId));
+    if (confirm('هل أنت متأكد من حذف هذا الصنف؟')) {
+      setItems(items.filter(item => item.id !== itemId));
+    }
   };
 
   return (
@@ -170,34 +245,39 @@ export default function Items() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">اسم الصنف</Label>
-              <Input id="name" placeholder="أدخل اسم الصنف" />
+              <Label htmlFor="name">اسم الصنف *</Label>
+              <Input 
+                id="name" 
+                placeholder="أدخل اسم الصنف"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="reference">الرقم المرجعي</Label>
               <Input 
                 id="reference" 
-                value={editingItem?.referenceNumber || AutoNumberGenerator.generateItemNumber()}
+                value={formData.referenceNumber}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="type">النوع</Label>
-              <Select>
+              <Label htmlFor="type">النوع *</Label>
+              <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({...prev, type: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر النوع" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="industrial">معدات صناعية</SelectItem>
-                  <SelectItem value="spare_parts">قطع غيار</SelectItem>
-                  <SelectItem value="raw_materials">مواد خام</SelectItem>
+                  <SelectItem value="معدات صناعية">معدات صناعية</SelectItem>
+                  <SelectItem value="قطع غيار">قطع غيار</SelectItem>
+                  <SelectItem value="مواد خام">مواد خام</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="supplier">المورد</Label>
-              <Select>
+              <Label htmlFor="supplier">المورد *</Label>
+              <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر المورد" />
                 </SelectTrigger>
@@ -211,33 +291,69 @@ export default function Items() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price">السعر</Label>
-              <Input id="price" type="number" placeholder="أدخل السعر" />
+              <Label htmlFor="price">السعر *</Label>
+              <Input 
+                id="price" 
+                type="number" 
+                placeholder="أدخل السعر"
+                value={formData.price}
+                onChange={(e) => setFormData(prev => ({...prev, price: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="unit">وحدة القياس</Label>
-              <Select>
+              <Label htmlFor="unit">وحدة القياس *</Label>
+              <Select value={formData.unit} onValueChange={(value) => setFormData(prev => ({...prev, unit: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر الوحدة" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="piece">قطعة</SelectItem>
-                  <SelectItem value="kg">كيلوجرام</SelectItem>
-                  <SelectItem value="liter">لتر</SelectItem>
-                  <SelectItem value="meter">متر</SelectItem>
+                  <SelectItem value="قطعة">قطعة</SelectItem>
+                  <SelectItem value="كيلوجرام">كيلوجرام</SelectItem>
+                  <SelectItem value="لتر">لتر</SelectItem>
+                  <SelectItem value="متر">متر</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quantity">الكمية</Label>
+              <Input 
+                id="quantity" 
+                type="number" 
+                placeholder="أدخل الكمية"
+                value={formData.quantity}
+                onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location">الموقع</Label>
+              <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الموقع" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mockLocations.map((location) => (
+                    <SelectItem key={location.id} value={location.id}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="col-span-2 space-y-2">
               <Label htmlFor="specifications">المواصفات</Label>
-              <Textarea id="specifications" placeholder="أدخل مواصفات الصنف" />
+              <Textarea 
+                id="specifications" 
+                placeholder="أدخل مواصفات الصنف"
+                value={formData.specifications}
+                onChange={(e) => setFormData(prev => ({...prev, specifications: e.target.value}))}
+              />
             </div>
           </div>
           <div className="flex justify-end space-x-2 space-x-reverse mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>
-            <Button onClick={() => setIsDialogOpen(false)}>
+            <Button onClick={handleSaveItem}>
               {editingItem ? 'حفظ التعديل' : 'إضافة الصنف'}
             </Button>
           </div>
