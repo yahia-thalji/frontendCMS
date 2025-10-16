@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,10 @@ import { Plus, Search, Edit, Trash2, Truck, Ship, Package, MapPin, Calendar } fr
 import { mockShipments } from '@/data/mockData';
 import { Shipment } from '@/types';
 import { AutoNumberGenerator } from '@/lib/autoNumber';
+import { ShipmentsStorage } from '@/lib/localStorage';
 
 export default function Shipping() {
-  const [shipments, setShipments] = useState<Shipment[]>(mockShipments);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
@@ -29,6 +30,18 @@ export default function Shipping() {
     shippingCost: '',
     customsFees: ''
   });
+
+  // تحميل البيانات عند بدء التشغيل
+  useEffect(() => {
+    const storedShipments = ShipmentsStorage.getAll();
+    if (storedShipments.length > 0) {
+      setShipments(storedShipments);
+    } else {
+      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
+      setShipments(mockShipments);
+      ShipmentsStorage.save(mockShipments);
+    }
+  }, []);
 
   const filteredShipments = shipments.filter(shipment =>
     shipment.shipmentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -125,10 +138,15 @@ export default function Shipping() {
     };
 
     if (editingShipment) {
-      setShipments(shipments.map(shipment => 
+      // تحديث الشحنة الموجودة
+      ShipmentsStorage.update(editingShipment.id, newShipment);
+      const updatedShipments = shipments.map(shipment => 
         shipment.id === editingShipment.id ? newShipment : shipment
-      ));
+      );
+      setShipments(updatedShipments);
     } else {
+      // إضافة شحنة جديدة
+      ShipmentsStorage.add(newShipment);
       setShipments([...shipments, newShipment]);
     }
 
@@ -138,6 +156,7 @@ export default function Shipping() {
 
   const handleDeleteShipment = (shipmentId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الشحنة؟')) {
+      ShipmentsStorage.delete(shipmentId);
       setShipments(shipments.filter(shipment => shipment.id !== shipmentId));
     }
   };

@@ -1,93 +1,87 @@
-// مكتبة توليد الأرقام التلقائية
-export class AutoNumberGenerator {
-  private static counters: Record<string, number> = {
-    invoice: 1,
-    supplier: 1,
-    item: 1,
-    location: 1,
-    shipment: 1,
-  };
+import { CountersStorage } from './localStorage';
 
-  // توليد رقم فاتورة
+export class AutoNumberGenerator {
+  // توليد رقم الفاتورة: INV-YYYYMM-XXX
   static generateInvoiceNumber(): string {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const number = String(this.counters.invoice).padStart(3, '0');
-    this.counters.invoice++;
-    return `INV-${year}${month}-${number}`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const counter = CountersStorage.updateCounter('invoices');
+    const sequence = String(counter).padStart(3, '0');
+    return `INV-${year}${month}-${sequence}`;
   }
 
-  // توليد رقم مورد
+  // توليد رقم المورد: SUP-YYYY-XXXX
   static generateSupplierNumber(): string {
     const year = new Date().getFullYear();
-    const number = String(this.counters.supplier).padStart(4, '0');
-    this.counters.supplier++;
-    return `SUP-${year}-${number}`;
+    const counter = CountersStorage.updateCounter('suppliers');
+    const sequence = String(counter).padStart(4, '0');
+    return `SUP-${year}-${sequence}`;
   }
 
-  // توليد رقم صنف
+  // توليد رقم الصنف: ITM-YYYY-XXXX
   static generateItemNumber(): string {
     const year = new Date().getFullYear();
-    const number = String(this.counters.item).padStart(4, '0');
-    this.counters.item++;
-    return `ITM-${year}-${number}`;
+    const counter = CountersStorage.updateCounter('items');
+    const sequence = String(counter).padStart(4, '0');
+    return `ITM-${year}-${sequence}`;
   }
 
-  // توليد رقم موقع
+  // توليد رقم الموقع: LOC-YYYY-XXX
   static generateLocationNumber(): string {
     const year = new Date().getFullYear();
-    const number = String(this.counters.location).padStart(3, '0');
-    this.counters.location++;
-    return `LOC-${year}-${number}`;
+    const counter = CountersStorage.updateCounter('locations');
+    const sequence = String(counter).padStart(3, '0');
+    return `LOC-${year}-${sequence}`;
   }
 
-  // توليد رقم شحنة
+  // توليد رقم الشحنة: SH-YYYYMM-XXX
   static generateShipmentNumber(): string {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const number = String(this.counters.shipment).padStart(3, '0');
-    this.counters.shipment++;
-    return `SH-${year}${month}-${number}`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const counter = CountersStorage.updateCounter('shipments');
+    const sequence = String(counter).padStart(3, '0');
+    return `SH-${year}${month}-${sequence}`;
   }
 
-  // توليد رقم بوليصة شحن
-  static generateBillOfLading(): string {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const day = String(new Date().getDate()).padStart(2, '0');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `BL-${year}${month}${day}-${random}`;
-  }
-
-  // توليد رقم حاوية
+  // توليد رقم الحاوية: ABCD123456X (تنسيق دولي)
   static generateContainerNumber(): string {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const prefix = Array.from({length: 4}, () => letters[Math.floor(Math.random() * letters.length)]).join('');
-    const number = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-    const checkDigit = Math.floor(Math.random() * 10);
-    return `${prefix}${number}${checkDigit}`;
+    const counter = CountersStorage.updateCounter('containers');
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+    
+    // توليد 4 أحرف عشوائية
+    const randomLetters = Array.from({ length: 4 }, () => 
+      letters[Math.floor(Math.random() * letters.length)]
+    ).join('');
+    
+    // رقم تسلسلي من 6 أرقام
+    const sequence = String(counter).padStart(6, '0');
+    
+    // رقم تحقق (check digit) - مبسط
+    const checkDigit = (counter % 10);
+    
+    return `${randomLetters}${sequence}${checkDigit}`;
   }
 
-  // إعادة تعيين العدادات (للاختبار)
-  static resetCounters(): void {
-    this.counters = {
-      invoice: 1,
-      supplier: 1,
-      item: 1,
-      location: 1,
-      shipment: 1,
-    };
+  // توليد رقم بوليصة الشحن: BL-YYYYMMDD-XXX
+  static generateBillOfLading(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const counter = CountersStorage.updateCounter('billOfLading');
+    const sequence = String(counter).padStart(3, '0');
+    return `BL-${year}${month}${day}-${sequence}`;
   }
 
-  // تحديث العداد لنوع معين
-  static updateCounter(type: string, value: number): void {
-    if (Object.prototype.hasOwnProperty.call(this.counters, type)) {
-      this.counters[type] = value;
-    }
+  // إعادة تعيين جميع العدادات
+  static resetAllCounters(): void {
+    CountersStorage.resetCounters();
   }
 
-  // الحصول على العداد الحالي
-  static getCurrentCounter(type: string): number {
-    return this.counters[type] || 0;
+  // الحصول على العدادات الحالية
+  static getCurrentCounters() {
+    return CountersStorage.getCounters();
   }
 }

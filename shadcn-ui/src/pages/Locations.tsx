@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,9 +13,10 @@ import { Plus, Search, Edit, Trash2, MapPin, Warehouse, Archive } from 'lucide-r
 import { mockLocations } from '@/data/mockData';
 import { Location } from '@/types';
 import { AutoNumberGenerator } from '@/lib/autoNumber';
+import { LocationsStorage } from '@/lib/localStorage';
 
 export default function Locations() {
-  const [locations, setLocations] = useState<Location[]>(mockLocations);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
@@ -29,6 +30,18 @@ export default function Locations() {
     currentStock: '',
     description: ''
   });
+
+  // تحميل البيانات عند بدء التشغيل
+  useEffect(() => {
+    const storedLocations = LocationsStorage.getAll();
+    if (storedLocations.length > 0) {
+      setLocations(storedLocations);
+    } else {
+      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
+      setLocations(mockLocations);
+      LocationsStorage.save(mockLocations);
+    }
+  }, []);
 
   const filteredLocations = locations.filter(location =>
     location.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -116,10 +129,15 @@ export default function Locations() {
     };
 
     if (editingLocation) {
-      setLocations(locations.map(location => 
+      // تحديث الموقع الموجود
+      LocationsStorage.update(editingLocation.id, newLocation);
+      const updatedLocations = locations.map(location => 
         location.id === editingLocation.id ? newLocation : location
-      ));
+      );
+      setLocations(updatedLocations);
     } else {
+      // إضافة موقع جديد
+      LocationsStorage.add(newLocation);
       setLocations([...locations, newLocation]);
     }
 
@@ -129,13 +147,14 @@ export default function Locations() {
 
   const handleDeleteLocation = (locationId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الموقع؟')) {
+      LocationsStorage.delete(locationId);
       setLocations(locations.filter(location => location.id !== locationId));
     }
   };
 
   const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
   const totalUsed = locations.reduce((sum, location) => sum + location.currentStock, 0);
-  const utilizationRate = Math.round((totalUsed / totalCapacity) * 100);
+  const utilizationRate = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
 
   return (
     <div className="space-y-6">

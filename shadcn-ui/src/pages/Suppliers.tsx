@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,10 @@ import { Plus, Search, Edit, Trash2, Users, Phone, Mail, MapPin } from 'lucide-r
 import { mockSuppliers } from '@/data/mockData';
 import { Supplier } from '@/types';
 import { AutoNumberGenerator } from '@/lib/autoNumber';
+import { SuppliersStorage } from '@/lib/localStorage';
 
 export default function Suppliers() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>(mockSuppliers);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -27,6 +28,18 @@ export default function Suppliers() {
     address: '',
     paymentTerms: ''
   });
+
+  // تحميل البيانات عند بدء التشغيل
+  useEffect(() => {
+    const storedSuppliers = SuppliersStorage.getAll();
+    if (storedSuppliers.length > 0) {
+      setSuppliers(storedSuppliers);
+    } else {
+      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
+      setSuppliers(mockSuppliers);
+      SuppliersStorage.save(mockSuppliers);
+    }
+  }, []);
 
   const filteredSuppliers = suppliers.filter(supplier =>
     supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -84,10 +97,15 @@ export default function Suppliers() {
     };
 
     if (editingSupplier) {
-      setSuppliers(suppliers.map(supplier => 
+      // تحديث المورد الموجود
+      SuppliersStorage.update(editingSupplier.id, newSupplier);
+      const updatedSuppliers = suppliers.map(supplier => 
         supplier.id === editingSupplier.id ? newSupplier : supplier
-      ));
+      );
+      setSuppliers(updatedSuppliers);
     } else {
+      // إضافة مورد جديد
+      SuppliersStorage.add(newSupplier);
       setSuppliers([...suppliers, newSupplier]);
     }
 
@@ -97,6 +115,7 @@ export default function Suppliers() {
 
   const handleDeleteSupplier = (supplierId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا المورد؟')) {
+      SuppliersStorage.delete(supplierId);
       setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
     }
   };
@@ -133,7 +152,13 @@ export default function Suppliers() {
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2</div>
+            <div className="text-2xl font-bold">
+              {suppliers.filter(s => {
+                const monthAgo = new Date();
+                monthAgo.setMonth(monthAgo.getMonth() - 1);
+                return s.createdAt >= monthAgo;
+              }).length}
+            </div>
             <p className="text-xs text-gray-600">هذا الشهر</p>
           </CardContent>
         </Card>

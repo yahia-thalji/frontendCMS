@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,10 @@ import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
 import { mockItems, mockSuppliers, mockLocations } from '@/data/mockData';
 import { Item } from '@/types';
 import { AutoNumberGenerator } from '@/lib/autoNumber';
+import { ItemsStorage, SuppliersStorage, LocationsStorage } from '@/lib/localStorage';
 
 export default function Items() {
-  const [items, setItems] = useState<Item[]>(mockItems);
+  const [items, setItems] = useState<Item[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
@@ -32,19 +33,35 @@ export default function Items() {
     locationId: ''
   });
 
+  // تحميل البيانات عند بدء التشغيل
+  useEffect(() => {
+    const storedItems = ItemsStorage.getAll();
+    if (storedItems.length > 0) {
+      setItems(storedItems);
+    } else {
+      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
+      setItems(mockItems);
+      ItemsStorage.save(mockItems);
+    }
+  }, []);
+
   const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSupplierName = (supplierId: string) => {
-    const supplier = mockSuppliers.find(s => s.id === supplierId);
+    const storedSuppliers = SuppliersStorage.getAll();
+    const allSuppliers = storedSuppliers.length > 0 ? storedSuppliers : mockSuppliers;
+    const supplier = allSuppliers.find(s => s.id === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
   const getLocationName = (locationId?: string) => {
     if (!locationId) return 'غير محدد';
-    const location = mockLocations.find(l => l.id === locationId);
+    const storedLocations = LocationsStorage.getAll();
+    const allLocations = storedLocations.length > 0 ? storedLocations : mockLocations;
+    const location = allLocations.find(l => l.id === locationId);
     return location?.name || 'غير محدد';
   };
 
@@ -109,8 +126,13 @@ export default function Items() {
     };
 
     if (editingItem) {
-      setItems(items.map(item => item.id === editingItem.id ? newItem : item));
+      // تحديث الصنف الموجود
+      ItemsStorage.update(editingItem.id, newItem);
+      const updatedItems = items.map(item => item.id === editingItem.id ? newItem : item);
+      setItems(updatedItems);
     } else {
+      // إضافة صنف جديد
+      ItemsStorage.add(newItem);
       setItems([...items, newItem]);
     }
 
@@ -120,6 +142,7 @@ export default function Items() {
 
   const handleDeleteItem = (itemId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الصنف؟')) {
+      ItemsStorage.delete(itemId);
       setItems(items.filter(item => item.id !== itemId));
     }
   };
@@ -282,7 +305,7 @@ export default function Items() {
                   <SelectValue placeholder="اختر المورد" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockSuppliers.map((supplier) => (
+                  {(SuppliersStorage.getAll().length > 0 ? SuppliersStorage.getAll() : mockSuppliers).map((supplier) => (
                     <SelectItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
                     </SelectItem>
@@ -331,7 +354,7 @@ export default function Items() {
                   <SelectValue placeholder="اختر الموقع" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockLocations.map((location) => (
+                  {(LocationsStorage.getAll().length > 0 ? LocationsStorage.getAll() : mockLocations).map((location) => (
                     <SelectItem key={location.id} value={location.id}>
                       {location.name}
                     </SelectItem>
