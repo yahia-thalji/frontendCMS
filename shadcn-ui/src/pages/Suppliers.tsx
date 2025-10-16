@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, Users, Phone, Mail, MapPin } from 'lucide-react';
 import { mockSuppliers } from '@/data/mockData';
 import { Supplier } from '@/types';
+import { AutoNumberGenerator } from '@/lib/autoNumber';
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>(mockSuppliers);
@@ -118,6 +119,7 @@ export default function Suppliers() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>رقم المورد</TableHead>
                 <TableHead>اسم المورد</TableHead>
                 <TableHead>معلومات الاتصال</TableHead>
                 <TableHead>العنوان</TableHead>
@@ -130,6 +132,7 @@ export default function Suppliers() {
             <TableBody>
               {filteredSuppliers.map((supplier) => (
                 <TableRow key={supplier.id}>
+                  <TableCell className="font-medium">SUP-2024-{supplier.id.padStart(4, '0')}</TableCell>
                   <TableCell className="font-medium">{supplier.name}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
@@ -196,6 +199,15 @@ export default function Suppliers() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="supplierNumber">رقم المورد</Label>
+              <Input 
+                id="supplierNumber" 
+                value={editingSupplier ? `SUP-2024-${editingSupplier.id.padStart(4, '0')}` : AutoNumberGenerator.generateSupplierNumber()}
+                disabled
+                className="bg-gray-50"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="supplierName">اسم المورد</Label>
               <Input id="supplierName" placeholder="أدخل اسم المورد" />

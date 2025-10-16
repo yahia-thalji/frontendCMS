@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Plus, Search, Edit, Trash2, MapPin, Warehouse, Archive } from 'lucide-react';
 import { mockLocations } from '@/data/mockData';
 import { Location } from '@/types';
+import { AutoNumberGenerator } from '@/lib/autoNumber';
 
 export default function Locations() {
   const [locations, setLocations] = useState<Location[]>(mockLocations);
@@ -177,6 +178,7 @@ export default function Locations() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>رقم الموقع</TableHead>
                 <TableHead>اسم الموقع</TableHead>
                 <TableHead>النوع</TableHead>
                 <TableHead>السعة</TableHead>
@@ -194,6 +196,7 @@ export default function Locations() {
                 
                 return (
                   <TableRow key={location.id}>
+                    <TableCell className="font-medium">LOC-2024-{location.id.padStart(3, '0')}</TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center">
                         <Icon className="h-4 w-4 ml-2 text-gray-500" />
@@ -257,6 +260,15 @@ export default function Locations() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="locationNumber">رقم الموقع</Label>
+              <Input 
+                id="locationNumber" 
+                value={editingLocation ? `LOC-2024-${editingLocation.id.padStart(3, '0')}` : AutoNumberGenerator.generateLocationNumber()}
+                disabled
+                className="bg-gray-50"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="locationName">اسم الموقع</Label>
               <Input id="locationName" placeholder="أدخل اسم الموقع" />

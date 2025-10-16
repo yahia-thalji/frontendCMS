@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Search, Edit, Trash2, Truck, Ship, Package, MapPin, Calendar } from 'lucide-react';
 import { mockShipments } from '@/data/mockData';
 import { Shipment } from '@/types';
+import { AutoNumberGenerator } from '@/lib/autoNumber';
 
 export default function Shipping() {
   const [shipments, setShipments] = useState<Shipment[]>(mockShipments);
@@ -260,15 +261,30 @@ export default function Shipping() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="shipmentNumber">رقم الشحنة</Label>
-              <Input id="shipmentNumber" placeholder="أدخل رقم الشحنة" />
+              <Input 
+                id="shipmentNumber" 
+                value={editingShipment?.shipmentNumber || AutoNumberGenerator.generateShipmentNumber()}
+                disabled
+                className="bg-gray-50"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="containerNumber">رقم الحاوية</Label>
-              <Input id="containerNumber" placeholder="أدخل رقم الحاوية" />
+              <Input 
+                id="containerNumber" 
+                value={editingShipment?.containerNumber || AutoNumberGenerator.generateContainerNumber()}
+                disabled
+                className="bg-gray-50"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="billOfLading">بوليصة الشحن</Label>
-              <Input id="billOfLading" placeholder="أدخل رقم بوليصة الشحن" />
+              <Input 
+                id="billOfLading" 
+                value={editingShipment?.billOfLading || AutoNumberGenerator.generateBillOfLading()}
+                disabled
+                className="bg-gray-50"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="status">حالة الشحنة</Label>

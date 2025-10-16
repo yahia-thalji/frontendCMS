@@ -4,13 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
 import { mockItems, mockSuppliers, mockLocations } from '@/data/mockData';
 import { Item } from '@/types';
+import { AutoNumberGenerator } from '@/lib/autoNumber';
 
 export default function Items() {
   const [items, setItems] = useState<Item[]>(mockItems);
@@ -174,7 +175,12 @@ export default function Items() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="reference">الرقم المرجعي</Label>
-              <Input id="reference" placeholder="أدخل الرقم المرجعي" />
+              <Input 
+                id="reference" 
+                value={editingItem?.referenceNumber || AutoNumberGenerator.generateItemNumber()}
+                disabled
+                className="bg-gray-50"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="type">النوع</Label>
