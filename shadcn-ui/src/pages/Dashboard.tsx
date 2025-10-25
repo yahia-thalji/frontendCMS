@@ -1,166 +1,323 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Package, Users, FileText, Truck, TrendingUp, AlertTriangle } from 'lucide-react';
-import { mockItems, mockSuppliers, mockInvoices, mockShipments } from '@/data/mockData';
+import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Package, Users, MapPin, Truck, FileText, AlertTriangle, TrendingUp, DollarSign } from 'lucide-react';
+import { mockItems, mockSuppliers, mockLocations, mockShipments, mockInvoices } from '@/data/mockData';
+import { ItemsStorage, SuppliersStorage, LocationsStorage, ShipmentsStorage, InvoicesStorage } from '@/lib/localStorage';
 
 export default function Dashboard() {
-  const totalItems = mockItems.reduce((sum, item) => sum + item.quantity, 0);
-  const totalInvoiceValue = mockInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
-  const pendingShipments = mockShipments.filter(s => s.status === 'in_transit').length;
-  
-  const stats = [
-    {
-      title: 'إجمالي الأصناف',
-      value: totalItems.toLocaleString('ar'),
-      icon: Package,
-      description: 'قطعة في المخزن',
-      trend: '+12%',
-      color: 'text-blue-600'
-    },
-    {
-      title: 'الموردين النشطين',
-      value: mockSuppliers.length.toString(),
-      icon: Users,
-      description: 'مورد مسجل',
-      trend: '+2',
-      color: 'text-green-600'
-    },
-    {
-      title: 'قيمة الفواتير',
-      value: totalInvoiceValue.toLocaleString('ar'),
-      icon: FileText,
-      description: 'ريال سعودي',
-      trend: '+8%',
-      color: 'text-purple-600'
-    },
-    {
-      title: 'الشحنات المعلقة',
-      value: pendingShipments.toString(),
-      icon: Truck,
-      description: 'شحنة في الطريق',
-      trend: '-1',
-      color: 'text-orange-600'
-    },
-  ];
+  const [items, setItems] = useState(mockItems);
+  const [suppliers, setSuppliers] = useState(mockSuppliers);
+  const [locations, setLocations] = useState(mockLocations);
+  const [shipments, setShipments] = useState(mockShipments);
+  const [invoices, setInvoices] = useState(mockInvoices);
 
+  // تحميل البيانات من التخزين المحلي
+  useEffect(() => {
+    const storedItems = ItemsStorage.getAll();
+    const storedSuppliers = SuppliersStorage.getAll();
+    const storedLocations = LocationsStorage.getAll();
+    const storedShipments = ShipmentsStorage.getAll();
+    const storedInvoices = InvoicesStorage.getAll();
+
+    if (storedItems.length > 0) setItems(storedItems);
+    if (storedSuppliers.length > 0) setSuppliers(storedSuppliers);
+    if (storedLocations.length > 0) setLocations(storedLocations);
+    if (storedShipments.length > 0) setShipments(storedShipments);
+    if (storedInvoices.length > 0) setInvoices(storedInvoices);
+  }, []);
+
+  // إحصائيات عامة
+  const totalItems = items.length;
+  const lowStockItems = items.filter(item => item.quantity < 20).length;
+  const totalSuppliers = suppliers.length;
+  const activeShipments = shipments.filter(s => s.status === 'in_transit').length;
+  const pendingInvoices = invoices.filter(i => i.status === 'pending').length;
+  const overdueInvoices = invoices.filter(i => i.status === 'overdue').length;
+
+  // إحصائيات المخزون
+  const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
+  const totalUsed = locations.reduce((sum, location) => sum + location.currentStock, 0);
+  const utilizationRate = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
+
+  // إحصائيات مالية
+  const totalInvoiceAmount = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const paidAmount = invoices.filter(i => i.status === 'paid').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const pendingAmount = invoices.filter(i => i.status === 'pending').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+
+  // الأنشطة الأخيرة
   const recentActivities = [
-    { id: 1, action: 'وصول شحنة جديدة', item: 'مضخة مياه صناعية', time: 'منذ ساعتين', status: 'success' },
-    { id: 2, action: 'فاتورة جديدة', item: 'INV-2024-002', time: 'منذ 4 ساعات', status: 'info' },
-    { id: 3, action: 'تحديث مخزون', item: 'صمام تحكم هيدروليكي', time: 'منذ يوم', status: 'warning' },
-    { id: 4, action: 'مورد جديد', item: 'شركة الخليج للتجارة', time: 'منذ يومين', status: 'success' },
-  ];
+    ...items.slice(-3).map(item => ({
+      type: 'item',
+      description: `تم إضافة صنف جديد: ${item.name}`,
+      time: item.createdAt,
+      icon: Package
+    })),
+    ...suppliers.slice(-2).map(supplier => ({
+      type: 'supplier',
+      description: `تم إضافة مورد جديد: ${supplier.name}`,
+      time: supplier.createdAt,
+      icon: Users
+    })),
+    ...shipments.slice(-2).map(shipment => ({
+      type: 'shipment',
+      description: `شحنة جديدة: ${shipment.shipmentNumber}`,
+      time: shipment.departureDate,
+      icon: Truck
+    }))
+  ].sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 5);
+
+  const getSupplierName = (supplierId: string) => {
+    const supplier = suppliers.find(s => s.id === supplierId);
+    return supplier?.name || 'غير محدد';
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">لوحة التحكم</h1>
-        <p className="text-gray-600 mt-2">نظرة عامة على نشاط إدارة حاويات الاستيراد</p>
+        <p className="text-gray-600 mt-2">نظرة عامة على نشاط نظام إدارة الاستيراد</p>
       </div>
 
-      {/* إحصائيات سريعة */}
+      {/* الإحصائيات الرئيسية */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.title}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">
-                  {stat.title}
-                </CardTitle>
-                <Icon className={`h-4 w-4 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-gray-600 mt-1">
-                  {stat.description}
-                </p>
-                <div className="flex items-center mt-2">
-                  <TrendingUp className="h-3 w-3 text-green-500 ml-1" />
-                  <span className="text-xs text-green-600">{stat.trend}</span>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* النشاطات الأخيرة */}
         <Card>
-          <CardHeader>
-            <CardTitle>النشاطات الأخيرة</CardTitle>
-            <CardDescription>آخر العمليات في النظام</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي الأصناف</CardTitle>
+            <Package className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-center space-x-4 space-x-reverse">
-                  <div className={`w-2 h-2 rounded-full ${
-                    activity.status === 'success' ? 'bg-green-500' :
-                    activity.status === 'warning' ? 'bg-yellow-500' :
-                    'bg-blue-500'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">
-                      {activity.action}
-                    </p>
-                    <p className="text-sm text-gray-500 truncate">
-                      {activity.item}
-                    </p>
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {activity.time}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div className="text-2xl font-bold">{totalItems}</div>
+            <p className="text-xs text-gray-600">
+              {lowStockItems > 0 && (
+                <span className="text-red-600">
+                  {lowStockItems} صنف بمخزون منخفض
+                </span>
+              )}
+            </p>
           </CardContent>
         </Card>
 
-        {/* تنبيهات مهمة */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">الموردين النشطين</CardTitle>
+            <Users className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalSuppliers}</div>
+            <p className="text-xs text-gray-600">مورد مسجل</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">الشحنات النشطة</CardTitle>
+            <Truck className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeShipments}</div>
+            <p className="text-xs text-gray-600">شحنة في الطريق</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">الفواتير المعلقة</CardTitle>
+            <FileText className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingInvoices}</div>
+            <p className="text-xs text-gray-600">
+              {overdueInvoices > 0 && (
+                <span className="text-red-600">
+                  {overdueInvoices} فاتورة متأخرة
+                </span>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* الإحصائيات المالية والمخزون */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <AlertTriangle className="h-5 w-5 text-yellow-500 ml-2" />
-              تنبيهات مهمة
+              <DollarSign className="h-5 w-5 ml-2" />
+              الوضع المالي
             </CardTitle>
-            <CardDescription>عناصر تحتاج إلى انتباهك</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">إجمالي الفواتير</span>
+              <span className="font-semibold">{totalInvoiceAmount.toLocaleString('ar')} ريال</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">المبلغ المدفوع</span>
+              <span className="font-semibold text-green-600">{paidAmount.toLocaleString('ar')} ريال</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">المبلغ المعلق</span>
+              <span className="font-semibold text-yellow-600">{pendingAmount.toLocaleString('ar')} ريال</span>
+            </div>
+            <Progress 
+              value={totalInvoiceAmount > 0 ? (paidAmount / totalInvoiceAmount) * 100 : 0} 
+              className="mt-2" 
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <MapPin className="h-5 w-5 ml-2" />
+              استخدام المخزون
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">السعة الإجمالية</span>
+              <span className="font-semibold">{totalCapacity.toLocaleString('ar')} وحدة</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">المساحة المستخدمة</span>
+              <span className="font-semibold">{totalUsed.toLocaleString('ar')} وحدة</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">معدل الاستخدام</span>
+              <span className={`font-semibold ${utilizationRate >= 90 ? 'text-red-600' : utilizationRate >= 70 ? 'text-yellow-600' : 'text-green-600'}`}>
+                {utilizationRate}%
+              </span>
+            </div>
+            <Progress value={utilizationRate} className="mt-2" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* التنبيهات والأنشطة الأخيرة */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* التنبيهات */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <AlertTriangle className="h-5 w-5 ml-2 text-red-600" />
+              التنبيهات المهمة
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">مخزون منخفض</p>
-                  <p className="text-xs text-gray-600">صمام تحكم هيدروليكي - 15 قطعة متبقية</p>
+              {lowStockItems > 0 && (
+                <div className="flex items-center p-3 bg-red-50 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-red-600 ml-2" />
+                  <div>
+                    <p className="text-sm font-medium text-red-800">مخزون منخفض</p>
+                    <p className="text-xs text-red-600">{lowStockItems} صنف يحتاج إعادة تموين</p>
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-yellow-600">
-                  تحذير
-                </Badge>
-              </div>
+              )}
               
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">فاتورة متأخرة</p>
-                  <p className="text-xs text-gray-600">INV-2024-001 - متأخرة 5 أيام</p>
+              {overdueInvoices > 0 && (
+                <div className="flex items-center p-3 bg-red-50 rounded-lg">
+                  <FileText className="h-4 w-4 text-red-600 ml-2" />
+                  <div>
+                    <p className="text-sm font-medium text-red-800">فواتير متأخرة</p>
+                    <p className="text-xs text-red-600">{overdueInvoices} فاتورة تجاوزت تاريخ الاستحقاق</p>
+                  </div>
                 </div>
-                <Badge variant="destructive">
-                  عاجل
-                </Badge>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">شحنة واصلة</p>
-                  <p className="text-xs text-gray-600">حاوية CONT-002 وصلت اليوم</p>
+              )}
+
+              {activeShipments > 0 && (
+                <div className="flex items-center p-3 bg-blue-50 rounded-lg">
+                  <Truck className="h-4 w-4 text-blue-600 ml-2" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-800">شحنات في الطريق</p>
+                    <p className="text-xs text-blue-600">{activeShipments} شحنة متوقع وصولها قريباً</p>
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-blue-600">
-                  جديد
-                </Badge>
-              </div>
+              )}
+
+              {lowStockItems === 0 && overdueInvoices === 0 && activeShipments === 0 && (
+                <div className="text-center py-4 text-gray-500">
+                  <p className="text-sm">لا توجد تنبيهات في الوقت الحالي</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* الأنشطة الأخيرة */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <TrendingUp className="h-5 w-5 ml-2" />
+              الأنشطة الأخيرة
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {recentActivities.map((activity, index) => {
+                const Icon = activity.icon;
+                return (
+                  <div key={index} className="flex items-center space-x-3 space-x-reverse">
+                    <Icon className="h-4 w-4 text-gray-500" />
+                    <div className="flex-1">
+                      <p className="text-sm">{activity.description}</p>
+                      <p className="text-xs text-gray-500">
+                        {activity.time.toLocaleDateString('ar-SA')}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* الأصناف منخفضة المخزون */}
+      {lowStockItems > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Package className="h-5 w-5 ml-2" />
+              الأصناف منخفضة المخزون
+            </CardTitle>
+            <CardDescription>الأصناف التي تحتاج إعادة تموين (أقل من 20 وحدة)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>اسم الصنف</TableHead>
+                  <TableHead>المورد</TableHead>
+                  <TableHead>الكمية المتبقية</TableHead>
+                  <TableHead>الوحدة</TableHead>
+                  <TableHead>الحالة</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.filter(item => item.quantity < 20).slice(0, 5).map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell>{getSupplierName(item.supplierId)}</TableCell>
+                    <TableCell className="text-red-600 font-semibold">
+                      {item.quantity} {item.unit}
+                    </TableCell>
+                    <TableCell>{item.unit}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-red-600">
+                        مخزون منخفض
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
