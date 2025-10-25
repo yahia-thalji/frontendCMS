@@ -35,6 +35,14 @@ export default function Invoices() {
     unitPrice: ''
   });
 
+  // دالة مساعدة لتنسيق الأرقام بأمان
+  const safeToLocaleString = (value: number | undefined | null): string => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0';
+    }
+    return value.toLocaleString('ar');
+  };
+
   // تحميل البيانات عند بدء التشغيل
   useEffect(() => {
     const storedInvoices = InvoicesStorage.getAll();
@@ -55,21 +63,23 @@ export default function Invoices() {
   }, [invoices]);
 
   const filteredInvoices = invoices.filter(invoice =>
-    invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getSupplierName(invoice.supplierId).toLowerCase().includes(searchTerm.toLowerCase())
+    invoice?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getSupplierName(invoice?.supplierId || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSupplierName = (supplierId: string) => {
+    if (!supplierId) return 'غير محدد';
     const storedSuppliers = SuppliersStorage.getAll();
     const allSuppliers = storedSuppliers.length > 0 ? storedSuppliers : mockSuppliers;
-    const supplier = allSuppliers.find(s => s.id === supplierId);
+    const supplier = allSuppliers.find(s => s?.id === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
   const getItemName = (itemId: string) => {
+    if (!itemId) return 'غير محدد';
     const storedItems = ItemsStorage.getAll();
     const allItems = storedItems.length > 0 ? storedItems : mockItems;
-    const item = allItems.find(i => i.id === itemId);
+    const item = allItems.find(i => i?.id === itemId);
     return item?.name || 'غير محدد';
   };
 
@@ -89,7 +99,7 @@ export default function Invoices() {
   };
 
   const calculateTotal = (items: InvoiceItem[]) => {
-    return items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+    return items.reduce((sum, item) => sum + ((item?.quantity || 0) * (item?.unitPrice || 0)), 0);
   };
 
   const resetForm = () => {
@@ -121,13 +131,13 @@ export default function Invoices() {
   const handleEditInvoice = (invoice: Invoice) => {
     setEditingInvoice(invoice);
     setFormData({
-      invoiceNumber: invoice.invoiceNumber,
-      supplierId: invoice.supplierId,
-      dueDate: invoice.dueDate.toISOString().split('T')[0],
-      status: invoice.status,
-      notes: invoice.notes || ''
+      invoiceNumber: invoice?.invoiceNumber || '',
+      supplierId: invoice?.supplierId || '',
+      dueDate: invoice?.dueDate ? invoice.dueDate.toISOString().split('T')[0] : '',
+      status: invoice?.status || 'pending',
+      notes: invoice?.notes || ''
     });
-    setInvoiceItems(invoice.items);
+    setInvoiceItems(invoice?.items || []);
     setIsDialogOpen(true);
   };
 
@@ -139,8 +149,8 @@ export default function Invoices() {
 
     const item: InvoiceItem = {
       itemId: newItem.itemId,
-      quantity: parseInt(newItem.quantity),
-      unitPrice: parseFloat(newItem.unitPrice)
+      quantity: parseInt(newItem.quantity) || 0,
+      unitPrice: parseFloat(newItem.unitPrice) || 0
     };
 
     setInvoiceItems([...invoiceItems, item]);
@@ -176,7 +186,7 @@ export default function Invoices() {
     if (editingInvoice) {
       // تحديث الفاتورة الموجودة
       const updatedInvoices = invoices.map(invoice => 
-        invoice.id === editingInvoice.id ? newInvoice : invoice
+        invoice?.id === editingInvoice.id ? newInvoice : invoice
       );
       setInvoices(updatedInvoices);
     } else {
@@ -190,16 +200,16 @@ export default function Invoices() {
 
   const handleDeleteInvoice = (invoiceId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) {
-      const updatedInvoices = invoices.filter(invoice => invoice.id !== invoiceId);
+      const updatedInvoices = invoices.filter(invoice => invoice?.id !== invoiceId);
       setInvoices(updatedInvoices);
     }
   };
 
   const totalInvoices = invoices.length;
-  const pendingInvoices = invoices.filter(i => i.status === 'pending').length;
-  const paidInvoices = invoices.filter(i => i.status === 'paid').length;
-  const overdueInvoices = invoices.filter(i => i.status === 'overdue').length;
-  const totalAmount = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const pendingInvoices = invoices.filter(i => i?.status === 'pending').length;
+  const paidInvoices = invoices.filter(i => i?.status === 'paid').length;
+  const overdueInvoices = invoices.filter(i => i?.status === 'overdue').length;
+  const totalAmount = invoices.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -255,7 +265,7 @@ export default function Invoices() {
             <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalAmount.toLocaleString('ar')}</div>
+            <div className="text-2xl font-bold">{safeToLocaleString(totalAmount)}</div>
             <p className="text-xs text-gray-600">ريال سعودي</p>
           </CardContent>
         </Card>
@@ -316,18 +326,18 @@ export default function Invoices() {
             </TableHeader>
             <TableBody>
               {filteredInvoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                  <TableCell>{getSupplierName(invoice.supplierId)}</TableCell>
+                <TableRow key={invoice?.id || Math.random()}>
+                  <TableCell className="font-medium">{invoice?.invoiceNumber || 'غير محدد'}</TableCell>
+                  <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
                   <TableCell>
                     <div className="flex items-center">
                       <Calendar className="h-3 w-3 ml-1" />
-                      {invoice.dueDate.toLocaleDateString('ar-SA')}
+                      {invoice?.dueDate ? invoice.dueDate.toLocaleDateString('ar-SA') : 'غير محدد'}
                     </div>
                   </TableCell>
-                  <TableCell>{invoice.totalAmount.toLocaleString('ar')} ريال</TableCell>
-                  <TableCell>{invoice.items.length} صنف</TableCell>
-                  <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                  <TableCell>{safeToLocaleString(invoice?.totalAmount)} ريال</TableCell>
+                  <TableCell>{invoice?.items?.length || 0} صنف</TableCell>
+                  <TableCell>{invoice?.status ? getStatusBadge(invoice.status) : 'غير محدد'}</TableCell>
                   <TableCell>
                     <div className="flex space-x-2 space-x-reverse">
                       <Button
@@ -340,7 +350,7 @@ export default function Invoices() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteInvoice(invoice.id)}
+                        onClick={() => handleDeleteInvoice(invoice?.id || '')}
                         className="text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -385,8 +395,8 @@ export default function Invoices() {
                 </SelectTrigger>
                 <SelectContent>
                   {(SuppliersStorage.getAll().length > 0 ? SuppliersStorage.getAll() : mockSuppliers).map((supplier) => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name}
+                    <SelectItem key={supplier?.id} value={supplier?.id || ''}>
+                      {supplier?.name || 'غير محدد'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -430,8 +440,8 @@ export default function Invoices() {
                   </SelectTrigger>
                   <SelectContent>
                     {(ItemsStorage.getAll().length > 0 ? ItemsStorage.getAll() : mockItems).map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
+                      <SelectItem key={item?.id} value={item?.id || ''}>
+                        {item?.name || 'غير محدد'}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -478,10 +488,10 @@ export default function Invoices() {
                 <TableBody>
                   {invoiceItems.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell>{getItemName(item.itemId)}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.unitPrice.toLocaleString('ar')} ريال</TableCell>
-                      <TableCell>{(item.quantity * item.unitPrice).toLocaleString('ar')} ريال</TableCell>
+                      <TableCell>{getItemName(item?.itemId || '')}</TableCell>
+                      <TableCell>{item?.quantity || 0}</TableCell>
+                      <TableCell>{safeToLocaleString(item?.unitPrice)} ريال</TableCell>
+                      <TableCell>{safeToLocaleString((item?.quantity || 0) * (item?.unitPrice || 0))} ريال</TableCell>
                       <TableCell>
                         <Button
                           variant="outline"
@@ -496,7 +506,7 @@ export default function Invoices() {
                   ))}
                   <TableRow className="font-semibold">
                     <TableCell colSpan={3}>الإجمالي الكلي:</TableCell>
-                    <TableCell>{calculateTotal(invoiceItems).toLocaleString('ar')} ريال</TableCell>
+                    <TableCell>{safeToLocaleString(calculateTotal(invoiceItems))} ريال</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
                 </TableBody>

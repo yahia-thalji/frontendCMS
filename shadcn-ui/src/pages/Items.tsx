@@ -33,6 +33,14 @@ export default function Items() {
     locationId: ''
   });
 
+  // دالة مساعدة لتنسيق الأرقام بأمان
+  const safeToLocaleString = (value: number | undefined | null): string => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0';
+    }
+    return value.toLocaleString('ar');
+  };
+
   // تحميل البيانات عند بدء التشغيل
   useEffect(() => {
     const storedItems = ItemsStorage.getAll();
@@ -45,15 +53,23 @@ export default function Items() {
     }
   }, []);
 
+  // حفظ تلقائي عند تغيير الأصناف
+  useEffect(() => {
+    if (items.length > 0) {
+      ItemsStorage.save(items);
+    }
+  }, [items]);
+
   const filteredItems = items.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item?.referenceNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSupplierName = (supplierId: string) => {
+    if (!supplierId) return 'غير محدد';
     const storedSuppliers = SuppliersStorage.getAll();
     const allSuppliers = storedSuppliers.length > 0 ? storedSuppliers : mockSuppliers;
-    const supplier = allSuppliers.find(s => s.id === supplierId);
+    const supplier = allSuppliers.find(s => s?.id === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
@@ -61,7 +77,7 @@ export default function Items() {
     if (!locationId) return 'غير محدد';
     const storedLocations = LocationsStorage.getAll();
     const allLocations = storedLocations.length > 0 ? storedLocations : mockLocations;
-    const location = allLocations.find(l => l.id === locationId);
+    const location = allLocations.find(l => l?.id === locationId);
     return location?.name || 'غير محدد';
   };
 
@@ -92,15 +108,15 @@ export default function Items() {
   const handleEditItem = (item: Item) => {
     setEditingItem(item);
     setFormData({
-      name: item.name,
-      referenceNumber: item.referenceNumber,
-      type: item.type,
-      supplierId: item.supplierId,
-      price: item.price.toString(),
-      unit: item.unit,
-      specifications: item.specifications || '',
-      quantity: item.quantity.toString(),
-      locationId: item.locationId || ''
+      name: item?.name || '',
+      referenceNumber: item?.referenceNumber || '',
+      type: item?.type || '',
+      supplierId: item?.supplierId || '',
+      price: (item?.price || 0).toString(),
+      unit: item?.unit || '',
+      specifications: item?.specifications || '',
+      quantity: (item?.quantity || 0).toString(),
+      locationId: item?.locationId || ''
     });
     setIsDialogOpen(true);
   };
@@ -117,7 +133,7 @@ export default function Items() {
       referenceNumber: formData.referenceNumber,
       type: formData.type,
       supplierId: formData.supplierId,
-      price: parseFloat(formData.price),
+      price: parseFloat(formData.price) || 0,
       unit: formData.unit,
       specifications: formData.specifications,
       quantity: parseInt(formData.quantity) || 0,
@@ -127,12 +143,10 @@ export default function Items() {
 
     if (editingItem) {
       // تحديث الصنف الموجود
-      ItemsStorage.update(editingItem.id, newItem);
-      const updatedItems = items.map(item => item.id === editingItem.id ? newItem : item);
+      const updatedItems = items.map(item => item?.id === editingItem.id ? newItem : item);
       setItems(updatedItems);
     } else {
       // إضافة صنف جديد
-      ItemsStorage.add(newItem);
       setItems([...items, newItem]);
     }
 
@@ -142,8 +156,8 @@ export default function Items() {
 
   const handleDeleteItem = (itemId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الصنف؟')) {
-      ItemsStorage.delete(itemId);
-      setItems(items.filter(item => item.id !== itemId));
+      const updatedItems = items.filter(item => item?.id !== itemId);
+      setItems(updatedItems);
     }
   };
 
@@ -215,20 +229,20 @@ export default function Items() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>{item.referenceNumber}</TableCell>
+                <TableRow key={item?.id || Math.random()}>
+                  <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
+                  <TableCell>{item?.referenceNumber || 'غير محدد'}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{item.type}</Badge>
+                    <Badge variant="outline">{item?.type || 'غير محدد'}</Badge>
                   </TableCell>
-                  <TableCell>{getSupplierName(item.supplierId)}</TableCell>
-                  <TableCell>{getLocationName(item.locationId)}</TableCell>
+                  <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
+                  <TableCell>{getLocationName(item?.locationId)}</TableCell>
                   <TableCell>
-                    <span className={item.quantity < 20 ? 'text-red-600 font-semibold' : ''}>
-                      {item.quantity} {item.unit}
+                    <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
+                      {item?.quantity || 0} {item?.unit || ''}
                     </span>
                   </TableCell>
-                  <TableCell>{item.price.toLocaleString('ar')} ريال</TableCell>
+                  <TableCell>{safeToLocaleString(item?.price)} ريال</TableCell>
                   <TableCell>
                     <div className="flex space-x-2 space-x-reverse">
                       <Button
@@ -241,7 +255,7 @@ export default function Items() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteItem(item.id)}
+                        onClick={() => handleDeleteItem(item?.id || '')}
                         className="text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -306,8 +320,8 @@ export default function Items() {
                 </SelectTrigger>
                 <SelectContent>
                   {(SuppliersStorage.getAll().length > 0 ? SuppliersStorage.getAll() : mockSuppliers).map((supplier) => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name}
+                    <SelectItem key={supplier?.id} value={supplier?.id || ''}>
+                      {supplier?.name || 'غير محدد'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -355,8 +369,8 @@ export default function Items() {
                 </SelectTrigger>
                 <SelectContent>
                   {(LocationsStorage.getAll().length > 0 ? LocationsStorage.getAll() : mockLocations).map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
+                    <SelectItem key={location?.id} value={location?.id || ''}>
+                      {location?.name || 'غير محدد'}
                     </SelectItem>
                   ))}
                 </SelectContent>
