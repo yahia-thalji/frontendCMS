@@ -10,7 +10,7 @@ export interface Item {
   locationId?: string;
   quantity: number;
   createdAt: Date;
-  updatedAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Supplier {
@@ -21,7 +21,7 @@ export interface Supplier {
   email: string;
   paymentTerms: string;
   createdAt: Date;
-  updatedDate: Date;
+  updatedAt?: Date;
 }
 
 export interface Invoice {
@@ -29,23 +29,25 @@ export interface Invoice {
   invoiceNumber: string;
   supplierId: string;
   items: InvoiceItem[];
-  subtotal: number;
-  shippingCost: number;
-  customsFees: number;
-  insurance: number;
-  total: number;
+  totalAmount: number;
+  subtotal?: number;
+  shippingCost?: number;
+  customsFees?: number;
+  insurance?: number;
+  total?: number;
   status: 'draft' | 'pending' | 'paid' | 'overdue';
-  issueDate: Date;
+  issueDate?: Date;
   dueDate: Date;
+  notes?: string;
   createdAt: Date;
-  updatedAt: Date;
+  updatedAt?: Date;
 }
 
 export interface InvoiceItem {
   itemId: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  total?: number;
 }
 
 export interface Location {
@@ -55,8 +57,8 @@ export interface Location {
   capacity: number;
   currentStock: number;
   description?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface Shipment {
@@ -66,20 +68,20 @@ export interface Shipment {
   containerNumber: string;
   status: 'in_transit' | 'arrived' | 'customs' | 'delivered';
   departureDate: Date;
-  arrivalDate?: Date;
+  arrivalDate?: Date | null;
   shippingCost: number;
   customsFees: number;
-  insurance: number;
-  items: ShipmentItem[];
-  createdAt: Date;
-  updatedAt: Date;
+  insurance?: number;
+  items?: ShipmentItem[];
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface ShipmentItem {
   itemId: string;
   quantity: number;
-  weight: number;
-  volume: number;
+  weight?: number;
+  volume?: number;
 }
 
 export interface CostDistribution {
@@ -100,4 +102,22 @@ export interface Report {
   title: string;
   data: ReportData;
   generatedAt: Date;
+}
+
+export interface Notification {
+  id: string;
+  type: 'low_stock' | 'overdue_invoice' | 'shipment_arrived' | 'general';
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: Date;
+  priority: 'low' | 'medium' | 'high';
+}
+
+export interface SearchResult {
+  type: 'item' | 'supplier' | 'invoice' | 'shipment' | 'location';
+  id: string;
+  title: string;
+  description: string;
+  url: string;
 }

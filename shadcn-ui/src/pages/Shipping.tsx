@@ -7,11 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Edit, Trash2, Truck, Ship, Package, MapPin, Calendar } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Truck, Ship, Package, MapPin, Calendar, X } from 'lucide-react';
 import { mockShipments } from '@/data/mockData';
-import { Shipment } from '@/types';
+import { Shipment, ShipmentItem } from '@/types';
 import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { ShipmentsStorage } from '@/lib/localStorage';
+import { ShipmentsStorage, ItemsStorage } from '@/lib/localStorage';
 
 export default function Shipping() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -31,6 +31,23 @@ export default function Shipping() {
     customsFees: ''
   });
 
+  // حالات الأصناف في الشحنة
+  const [shipmentItems, setShipmentItems] = useState<ShipmentItem[]>([]);
+  const [newItem, setNewItem] = useState({
+    itemId: '',
+    quantity: '',
+    weight: '',
+    volume: ''
+  });
+
+  // دالة مساعدة لتنسيق الأرقام بأمان
+  const safeToLocaleString = (value: number | undefined | null): string => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0';
+    }
+    return value.toLocaleString('ar');
+  };
+
   // تحميل البيانات عند بدء التشغيل
   useEffect(() => {
     const storedShipments = ShipmentsStorage.getAll();
@@ -43,9 +60,16 @@ export default function Shipping() {
     }
   }, []);
 
+  // حفظ تلقائي عند تغيير الشحنات
+  useEffect(() => {
+    if (shipments.length > 0) {
+      ShipmentsStorage.save(shipments);
+    }
+  }, [shipments]);
+
   const filteredShipments = shipments.filter(shipment =>
-    shipment.shipmentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    shipment.containerNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    shipment?.shipmentNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    shipment?.containerNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getStatusBadge = (status: Shipment['status']) => {
@@ -79,6 +103,12 @@ export default function Shipping() {
     }
   };
 
+  const getItemName = (itemId: string) => {
+    const items = ItemsStorage.getAll();
+    const item = items.find(i => i?.id === itemId);
+    return item?.name || 'صنف غير محدد';
+  };
+
   const resetForm = () => {
     setFormData({
       shipmentNumber: '',
@@ -89,6 +119,13 @@ export default function Shipping() {
       arrivalDate: '',
       shippingCost: '',
       customsFees: ''
+    });
+    setShipmentItems([]);
+    setNewItem({
+      itemId: '',
+      quantity: '',
+      weight: '',
+      volume: ''
     });
   };
 
@@ -107,16 +144,66 @@ export default function Shipping() {
   const handleEditShipment = (shipment: Shipment) => {
     setEditingShipment(shipment);
     setFormData({
-      shipmentNumber: shipment.shipmentNumber,
-      containerNumber: shipment.containerNumber,
-      billOfLading: shipment.billOfLading,
-      status: shipment.status,
-      departureDate: shipment.departureDate.toISOString().split('T')[0],
-      arrivalDate: shipment.arrivalDate ? shipment.arrivalDate.toISOString().split('T')[0] : '',
-      shippingCost: shipment.shippingCost.toString(),
-      customsFees: shipment.customsFees.toString()
+      shipmentNumber: shipment?.shipmentNumber || '',
+      containerNumber: shipment?.containerNumber || '',
+      billOfLading: shipment?.billOfLading || '',
+      status: shipment?.status || 'in_transit',
+      departureDate: shipment?.departureDate ? shipment.departureDate.toISOString().split('T')[0] : '',
+      arrivalDate: shipment?.arrivalDate ? shipment.arrivalDate.toISOString().split('T')[0] : '',
+      shippingCost: (shipment?.shippingCost || 0).toString(),
+      customsFees: (shipment?.customsFees || 0).toString()
     });
+    setShipmentItems(shipment?.items || []);
     setIsDialogOpen(true);
+  };
+
+  const handleAddItem = () => {
+    if (!newItem.itemId || !newItem.quantity) {
+      alert('يرجى اختيار الصنف وإدخال الكمية');
+      return;
+    }
+
+    const item: ShipmentItem = {
+      itemId: newItem.itemId,
+      quantity: parseInt(newItem.quantity) || 0,
+      weight: parseFloat(newItem.weight) || 0,
+      volume: parseFloat(newItem.volume) || 0
+    };
+
+    setShipmentItems([...shipmentItems, item]);
+    setNewItem({
+      itemId: '',
+      quantity: '',
+      weight: '',
+      volume: ''
+    });
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setShipmentItems(shipmentItems.filter((_, i) => i !== index));
+  };
+
+  const updateInventoryOnDelivery = (items: ShipmentItem[], isDelivered: boolean) => {
+    if (!isDelivered) return;
+
+    const allItems = ItemsStorage.getAll();
+    let updated = false;
+
+    const updatedItems = allItems.map(item => {
+      const shipmentItem = items.find(si => si.itemId === item.id);
+      if (shipmentItem) {
+        updated = true;
+        return {
+          ...item,
+          quantity: (item.quantity || 0) + shipmentItem.quantity
+        };
+      }
+      return item;
+    });
+
+    if (updated) {
+      ItemsStorage.save(updatedItems);
+    }
   };
 
   const handleSaveShipment = () => {
@@ -134,19 +221,24 @@ export default function Shipping() {
       departureDate: new Date(formData.departureDate),
       arrivalDate: formData.arrivalDate ? new Date(formData.arrivalDate) : null,
       shippingCost: parseFloat(formData.shippingCost) || 0,
-      customsFees: parseFloat(formData.customsFees) || 0
+      customsFees: parseFloat(formData.customsFees) || 0,
+      items: shipmentItems,
+      createdAt: editingShipment?.createdAt || new Date()
     };
+
+    // تحديث المخزون إذا كانت الحالة "تم التسليم"
+    if (formData.status === 'delivered' && (!editingShipment || editingShipment.status !== 'delivered')) {
+      updateInventoryOnDelivery(shipmentItems, true);
+    }
 
     if (editingShipment) {
       // تحديث الشحنة الموجودة
-      ShipmentsStorage.update(editingShipment.id, newShipment);
       const updatedShipments = shipments.map(shipment => 
-        shipment.id === editingShipment.id ? newShipment : shipment
+        shipment?.id === editingShipment.id ? newShipment : shipment
       );
       setShipments(updatedShipments);
     } else {
       // إضافة شحنة جديدة
-      ShipmentsStorage.add(newShipment);
       setShipments([...shipments, newShipment]);
     }
 
@@ -156,22 +248,22 @@ export default function Shipping() {
 
   const handleDeleteShipment = (shipmentId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الشحنة؟')) {
-      ShipmentsStorage.delete(shipmentId);
-      setShipments(shipments.filter(shipment => shipment.id !== shipmentId));
+      const updatedShipments = shipments.filter(shipment => shipment?.id !== shipmentId);
+      setShipments(updatedShipments);
     }
   };
 
   const totalShipments = shipments.length;
-  const inTransitShipments = shipments.filter(s => s.status === 'in_transit').length;
-  const deliveredShipments = shipments.filter(s => s.status === 'delivered').length;
-  const totalShippingCost = shipments.reduce((sum, shipment) => sum + shipment.shippingCost, 0);
+  const inTransitShipments = shipments.filter(s => s?.status === 'in_transit').length;
+  const deliveredShipments = shipments.filter(s => s?.status === 'delivered').length;
+  const totalShippingCost = shipments.reduce((sum, shipment) => sum + (shipment?.shippingCost || 0), 0);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">إدارة الشحن</h1>
-          <p className="text-gray-600 mt-2">تتبع جميع الشحنات والحاويات</p>
+          <p className="text-gray-600 mt-2">تتبع جميع الشحنات والحاويات مع إدارة الأصناف</p>
         </div>
         <Button onClick={handleAddShipment} className="flex items-center">
           <Plus className="h-4 w-4 ml-2" />
@@ -220,7 +312,7 @@ export default function Shipping() {
             <Truck className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalShippingCost.toLocaleString('ar')}</div>
+            <div className="text-2xl font-bold">{safeToLocaleString(totalShippingCost)}</div>
             <p className="text-xs text-gray-600">ريال سعودي</p>
           </CardContent>
         </Card>
@@ -274,6 +366,7 @@ export default function Shipping() {
                 <TableHead>رقم الشحنة</TableHead>
                 <TableHead>رقم الحاوية</TableHead>
                 <TableHead>بوليصة الشحن</TableHead>
+                <TableHead>عدد الأصناف</TableHead>
                 <TableHead>تاريخ المغادرة</TableHead>
                 <TableHead>تاريخ الوصول</TableHead>
                 <TableHead>تكلفة الشحن</TableHead>
@@ -283,26 +376,31 @@ export default function Shipping() {
             </TableHeader>
             <TableBody>
               {filteredShipments.map((shipment) => {
-                const StatusIcon = getStatusIcon(shipment.status);
+                const StatusIcon = getStatusIcon(shipment?.status || 'in_transit');
                 
                 return (
-                  <TableRow key={shipment.id}>
+                  <TableRow key={shipment?.id || Math.random()}>
                     <TableCell className="font-medium">
                       <div className="flex items-center">
                         <StatusIcon className="h-4 w-4 ml-2 text-gray-500" />
-                        {shipment.shipmentNumber}
+                        {shipment?.shipmentNumber || 'غير محدد'}
                       </div>
                     </TableCell>
-                    <TableCell>{shipment.containerNumber}</TableCell>
-                    <TableCell>{shipment.billOfLading}</TableCell>
+                    <TableCell>{shipment?.containerNumber || 'غير محدد'}</TableCell>
+                    <TableCell>{shipment?.billOfLading || 'غير محدد'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {shipment?.items?.length || 0} صنف
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Calendar className="h-3 w-3 ml-1" />
-                        {shipment.departureDate.toLocaleDateString('ar-SA')}
+                        {shipment?.departureDate ? shipment.departureDate.toLocaleDateString('ar-SA') : 'غير محدد'}
                       </div>
                     </TableCell>
                     <TableCell>
-                      {shipment.arrivalDate ? (
+                      {shipment?.arrivalDate ? (
                         <div className="flex items-center">
                           <Calendar className="h-3 w-3 ml-1" />
                           {shipment.arrivalDate.toLocaleDateString('ar-SA')}
@@ -311,8 +409,8 @@ export default function Shipping() {
                         <span className="text-gray-400">لم يصل بعد</span>
                       )}
                     </TableCell>
-                    <TableCell>{shipment.shippingCost.toLocaleString('ar')} ريال</TableCell>
-                    <TableCell>{getStatusBadge(shipment.status)}</TableCell>
+                    <TableCell>{safeToLocaleString(shipment?.shippingCost)} ريال</TableCell>
+                    <TableCell>{shipment?.status ? getStatusBadge(shipment.status) : 'غير محدد'}</TableCell>
                     <TableCell>
                       <div className="flex space-x-2 space-x-reverse">
                         <Button
@@ -325,7 +423,7 @@ export default function Shipping() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteShipment(shipment.id)}
+                          onClick={() => handleDeleteShipment(shipment?.id || '')}
                           className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -342,7 +440,7 @@ export default function Shipping() {
 
       {/* نافذة إضافة/تعديل الشحنة */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
@@ -351,7 +449,9 @@ export default function Shipping() {
               {editingShipment ? 'تعديل بيانات الشحنة المحددة' : 'إضافة شحنة جديدة إلى النظام'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
+          
+          {/* بيانات الشحنة الأساسية */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="space-y-2">
               <Label htmlFor="shipmentNumber">رقم الشحنة</Label>
               <Input 
@@ -432,7 +532,100 @@ export default function Shipping() {
               />
             </div>
           </div>
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
+
+          {/* إضافة الأصناف */}
+          <div className="border rounded-lg p-4 mb-4">
+            <h3 className="text-lg font-semibold mb-4">أصناف الشحنة</h3>
+            
+            {/* نموذج إضافة صنف جديد */}
+            <div className="grid grid-cols-5 gap-4 mb-4">
+              <div className="space-y-2">
+                <Label>الصنف</Label>
+                <Select value={newItem.itemId} onValueChange={(value) => setNewItem(prev => ({...prev, itemId: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الصنف" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ItemsStorage.getAll().map((item) => (
+                      <SelectItem key={item?.id} value={item?.id || ''}>
+                        {item?.name || 'غير محدد'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>الكمية</Label>
+                <Input 
+                  type="number" 
+                  placeholder="الكمية"
+                  value={newItem.quantity}
+                  onChange={(e) => setNewItem(prev => ({...prev, quantity: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>الوزن (كجم)</Label>
+                <Input 
+                  type="number" 
+                  placeholder="الوزن"
+                  value={newItem.weight}
+                  onChange={(e) => setNewItem(prev => ({...prev, weight: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>الحجم (م³)</Label>
+                <Input 
+                  type="number" 
+                  placeholder="الحجم"
+                  value={newItem.volume}
+                  onChange={(e) => setNewItem(prev => ({...prev, volume: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>&nbsp;</Label>
+                <Button onClick={handleAddItem} className="w-full">
+                  إضافة الصنف
+                </Button>
+              </div>
+            </div>
+
+            {/* قائمة الأصناف المضافة */}
+            {shipmentItems.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>الصنف</TableHead>
+                    <TableHead>الكمية</TableHead>
+                    <TableHead>الوزن (كجم)</TableHead>
+                    <TableHead>الحجم (م³)</TableHead>
+                    <TableHead>إجراء</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shipmentItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{getItemName(item?.itemId || '')}</TableCell>
+                      <TableCell>{item?.quantity || 0}</TableCell>
+                      <TableCell>{item?.weight || 0}</TableCell>
+                      <TableCell>{item?.volume || 0}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemoveItem(index)}
+                          className="text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+
+          <div className="flex justify-end space-x-2 space-x-reverse">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>
