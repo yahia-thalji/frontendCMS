@@ -29,48 +29,57 @@ export default function Dashboard() {
     if (storedInvoices.length > 0) setInvoices(storedInvoices);
   }, []);
 
+  // دالة مساعدة لتنسيق الأرقام بأمان
+  const safeToLocaleString = (value: number | undefined | null): string => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0';
+    }
+    return value.toLocaleString('ar');
+  };
+
   // إحصائيات عامة
-  const totalItems = items.length;
-  const lowStockItems = items.filter(item => item.quantity < 20).length;
-  const totalSuppliers = suppliers.length;
-  const activeShipments = shipments.filter(s => s.status === 'in_transit').length;
-  const pendingInvoices = invoices.filter(i => i.status === 'pending').length;
-  const overdueInvoices = invoices.filter(i => i.status === 'overdue').length;
+  const totalItems = items?.length || 0;
+  const lowStockItems = items?.filter(item => item?.quantity && item.quantity < 20)?.length || 0;
+  const totalSuppliers = suppliers?.length || 0;
+  const activeShipments = shipments?.filter(s => s?.status === 'in_transit')?.length || 0;
+  const pendingInvoices = invoices?.filter(i => i?.status === 'pending')?.length || 0;
+  const overdueInvoices = invoices?.filter(i => i?.status === 'overdue')?.length || 0;
 
   // إحصائيات المخزون
-  const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
-  const totalUsed = locations.reduce((sum, location) => sum + location.currentStock, 0);
+  const totalCapacity = locations?.reduce((sum, location) => sum + (location?.capacity || 0), 0) || 0;
+  const totalUsed = locations?.reduce((sum, location) => sum + (location?.currentStock || 0), 0) || 0;
   const utilizationRate = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
 
   // إحصائيات مالية
-  const totalInvoiceAmount = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
-  const paidAmount = invoices.filter(i => i.status === 'paid').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
-  const pendingAmount = invoices.filter(i => i.status === 'pending').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const totalInvoiceAmount = invoices?.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0) || 0;
+  const paidAmount = invoices?.filter(i => i?.status === 'paid')?.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0) || 0;
+  const pendingAmount = invoices?.filter(i => i?.status === 'pending')?.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0) || 0;
 
   // الأنشطة الأخيرة
   const recentActivities = [
-    ...items.slice(-3).map(item => ({
+    ...(items?.slice(-3)?.map(item => ({
       type: 'item',
-      description: `تم إضافة صنف جديد: ${item.name}`,
-      time: item.createdAt,
+      description: `تم إضافة صنف جديد: ${item?.name || 'غير محدد'}`,
+      time: item?.createdAt || new Date(),
       icon: Package
-    })),
-    ...suppliers.slice(-2).map(supplier => ({
+    })) || []),
+    ...(suppliers?.slice(-2)?.map(supplier => ({
       type: 'supplier',
-      description: `تم إضافة مورد جديد: ${supplier.name}`,
-      time: supplier.createdAt,
+      description: `تم إضافة مورد جديد: ${supplier?.name || 'غير محدد'}`,
+      time: supplier?.createdAt || new Date(),
       icon: Users
-    })),
-    ...shipments.slice(-2).map(shipment => ({
+    })) || []),
+    ...(shipments?.slice(-2)?.map(shipment => ({
       type: 'shipment',
-      description: `شحنة جديدة: ${shipment.shipmentNumber}`,
-      time: shipment.departureDate,
+      description: `شحنة جديدة: ${shipment?.shipmentNumber || 'غير محدد'}`,
+      time: shipment?.departureDate || new Date(),
       icon: Truck
-    }))
-  ].sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 5);
+    })) || [])
+  ].sort((a, b) => (b?.time?.getTime() || 0) - (a?.time?.getTime() || 0)).slice(0, 5);
 
   const getSupplierName = (supplierId: string) => {
-    const supplier = suppliers.find(s => s.id === supplierId);
+    if (!supplierId || !suppliers) return 'غير محدد';
+    const supplier = suppliers.find(s => s?.id === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
@@ -152,15 +161,15 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">إجمالي الفواتير</span>
-              <span className="font-semibold">{totalInvoiceAmount.toLocaleString('ar')} ريال</span>
+              <span className="font-semibold">{safeToLocaleString(totalInvoiceAmount)} ريال</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">المبلغ المدفوع</span>
-              <span className="font-semibold text-green-600">{paidAmount.toLocaleString('ar')} ريال</span>
+              <span className="font-semibold text-green-600">{safeToLocaleString(paidAmount)} ريال</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">المبلغ المعلق</span>
-              <span className="font-semibold text-yellow-600">{pendingAmount.toLocaleString('ar')} ريال</span>
+              <span className="font-semibold text-yellow-600">{safeToLocaleString(pendingAmount)} ريال</span>
             </div>
             <Progress 
               value={totalInvoiceAmount > 0 ? (paidAmount / totalInvoiceAmount) * 100 : 0} 
@@ -179,11 +188,11 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">السعة الإجمالية</span>
-              <span className="font-semibold">{totalCapacity.toLocaleString('ar')} وحدة</span>
+              <span className="font-semibold">{safeToLocaleString(totalCapacity)} وحدة</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">المساحة المستخدمة</span>
-              <span className="font-semibold">{totalUsed.toLocaleString('ar')} وحدة</span>
+              <span className="font-semibold">{safeToLocaleString(totalUsed)} وحدة</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">معدل الاستخدام</span>
@@ -265,7 +274,7 @@ export default function Dashboard() {
                     <div className="flex-1">
                       <p className="text-sm">{activity.description}</p>
                       <p className="text-xs text-gray-500">
-                        {activity.time.toLocaleDateString('ar-SA')}
+                        {activity.time?.toLocaleDateString ? activity.time.toLocaleDateString('ar-SA') : 'تاريخ غير محدد'}
                       </p>
                     </div>
                   </div>
@@ -277,7 +286,7 @@ export default function Dashboard() {
       </div>
 
       {/* الأصناف منخفضة المخزون */}
-      {lowStockItems > 0 && (
+      {lowStockItems > 0 && items && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -298,14 +307,14 @@ export default function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.filter(item => item.quantity < 20).slice(0, 5).map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{getSupplierName(item.supplierId)}</TableCell>
+                {items.filter(item => item?.quantity && item.quantity < 20).slice(0, 5).map((item) => (
+                  <TableRow key={item?.id || Math.random()}>
+                    <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
+                    <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
                     <TableCell className="text-red-600 font-semibold">
-                      {item.quantity} {item.unit}
+                      {item?.quantity || 0} {item?.unit || ''}
                     </TableCell>
-                    <TableCell>{item.unit}</TableCell>
+                    <TableCell>{item?.unit || 'غير محدد'}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-red-600">
                         مخزون منخفض
