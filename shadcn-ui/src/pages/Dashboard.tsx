@@ -11,45 +11,17 @@ import {
   TrendingUp, 
   AlertTriangle,
   DollarSign,
-  BarChart3,
-  Cloud,
-  Wifi,
-  WifiOff
+  BarChart3
 } from 'lucide-react';
 import { Item, Supplier, Invoice, Shipment } from '@/types';
 import { ItemsStorage, SuppliersStorage, InvoicesStorage, ShipmentsStorage } from '@/lib/localStorage';
-import { 
-  CloudItemsStorage, 
-  CloudSuppliersStorage, 
-  CloudInvoicesStorage, 
-  CloudShipmentsStorage 
-} from '@/lib/cloudStorage';
 
-interface DashboardProps {
-  isCloudMode: boolean;
-}
-
-export default function Dashboard({ isCloudMode }: DashboardProps) {
+export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-
-  // مراقبة حالة الاتصال
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   // دالة مساعدة لتنسيق الأرقام بأمان
   const safeToLocaleString = (value: number | undefined | null): string => {
@@ -60,36 +32,15 @@ export default function Dashboard({ isCloudMode }: DashboardProps) {
   };
 
   // تحميل البيانات
-  const loadData = async () => {
+  const loadData = () => {
     setLoading(true);
     try {
-      if (isCloudMode && isOnline) {
-        // تحميل من السحابة
-        const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
-          CloudItemsStorage.getAll(),
-          CloudSuppliersStorage.getAll(),
-          CloudInvoicesStorage.getAll(),
-          CloudShipmentsStorage.getAll()
-        ]);
-
-        setItems(itemsData);
-        setSuppliers(suppliersData);
-        setInvoices(invoicesData);
-        setShipments(shipmentsData);
-      } else {
-        // تحميل من التخزين المحلي
-        setItems(ItemsStorage.getAll());
-        setSuppliers(SuppliersStorage.getAll());
-        setInvoices(InvoicesStorage.getAll());
-        setShipments(ShipmentsStorage.getAll());
-      }
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-      // fallback إلى التخزين المحلي في حالة الخطأ
       setItems(ItemsStorage.getAll());
       setSuppliers(SuppliersStorage.getAll());
       setInvoices(InvoicesStorage.getAll());
       setShipments(ShipmentsStorage.getAll());
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
     } finally {
       setLoading(false);
     }
@@ -97,22 +48,7 @@ export default function Dashboard({ isCloudMode }: DashboardProps) {
 
   useEffect(() => {
     loadData();
-
-    // إعداد المراقبة المباشرة للبيانات السحابية
-    if (isCloudMode && isOnline) {
-      const unsubscribeItems = CloudItemsStorage.onSnapshot(setItems);
-      const unsubscribeSuppliers = CloudSuppliersStorage.onSnapshot(setSuppliers);
-      const unsubscribeInvoices = CloudInvoicesStorage.onSnapshot(setInvoices);
-      const unsubscribeShipments = CloudShipmentsStorage.onSnapshot(setShipments);
-
-      return () => {
-        unsubscribeItems();
-        unsubscribeSuppliers();
-        unsubscribeInvoices();
-        unsubscribeShipments();
-      };
-    }
-  }, [isCloudMode, isOnline]);
+  }, []);
 
   // حساب الإحصائيات
   const totalItems = items.length;
@@ -165,25 +101,11 @@ export default function Dashboard({ isCloudMode }: DashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* رأس الصفحة مع مؤشر الحالة */}
+      {/* رأس الصفحة */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">لوحة التحكم</h1>
           <p className="text-gray-600 mt-2">نظرة عامة على جميع العمليات والإحصائيات</p>
-        </div>
-        
-        <div className="flex items-center space-x-2 space-x-reverse">
-          {isCloudMode && (
-            <Badge variant={isOnline ? "default" : "secondary"} className="flex items-center">
-              {isOnline ? <Wifi className="h-3 w-3 ml-1" /> : <WifiOff className="h-3 w-3 ml-1" />}
-              {isOnline ? 'متصل' : 'غير متصل'}
-            </Badge>
-          )}
-          
-          <Badge variant="outline" className="flex items-center">
-            {isCloudMode ? <Cloud className="h-3 w-3 ml-1" /> : <Package className="h-3 w-3 ml-1" />}
-            {isCloudMode ? 'نظام سحابي' : 'نظام محلي'}
-          </Badge>
         </div>
       </div>
 
