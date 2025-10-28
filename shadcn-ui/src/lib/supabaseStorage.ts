@@ -135,8 +135,54 @@ class SupabaseStorage<T extends { id?: string }> {
   }
 }
 
+// Counter type for auto-numbering
+interface Counter {
+  id?: string;
+  entity_type: string;
+  current_number: number;
+  prefix: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+class CountersStorage extends SupabaseStorage<Counter> {
+  async getNextNumber(entityType: string, prefix: string): Promise<string> {
+    try {
+      const { data: existing, error: fetchError } = await supabase
+        .from(this.tableName)
+        .select('*')
+        .eq('entity_type', entityType)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
+
+      let currentNumber = 1;
+      
+      if (existing) {
+        currentNumber = (existing.current_number || 0) + 1;
+        await supabase
+          .from(this.tableName)
+          .update({ current_number: currentNumber })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from(this.tableName)
+          .insert([{ entity_type: entityType, current_number: currentNumber, prefix }]);
+      }
+
+      return `${prefix}${String(currentNumber).padStart(6, '0')}`;
+    } catch (error) {
+      console.error('Error generating number:', error);
+      return `${prefix}${String(Date.now()).slice(-6)}`;
+    }
+  }
+}
+
 export const SupabaseItemsStorage = new SupabaseStorage<Item>('app_d7698bc563_items');
 export const SupabaseSuppliersStorage = new SupabaseStorage<Supplier>('app_d7698bc563_suppliers');
 export const SupabaseInvoicesStorage = new SupabaseStorage<Invoice>('app_d7698bc563_invoices');
 export const SupabaseLocationsStorage = new SupabaseStorage<Location>('app_d7698bc563_locations');
 export const SupabaseShipmentsStorage = new SupabaseStorage<Shipment>('app_d7698bc563_shipments');
+export const SupabaseCountersStorage = new CountersStorage('app_d7698bc563_auto_numbers');
