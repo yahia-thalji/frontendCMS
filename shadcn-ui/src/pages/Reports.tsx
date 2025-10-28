@@ -1,24 +1,47 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { BarChart3, PieChart, TrendingUp, Download, Calendar, FileText, DollarSign, Package } from 'lucide-react';
-import { ItemsStorage, SuppliersStorage, InvoicesStorage, ShipmentsStorage, LocationsStorage } from '@/lib/localStorage';
+import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseInvoicesStorage, SupabaseShipmentsStorage } from '@/lib/supabaseStorage';
+import { Item, Supplier, Invoice, Shipment } from '@/types';
 
 export default function Reports() {
   const [selectedReport, setSelectedReport] = useState('inventory');
   const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const [loading, setLoading] = useState(true);
 
-  // جلب البيانات الحقيقية من التخزين المحلي
-  const items = ItemsStorage.getAll();
-  const suppliers = SuppliersStorage.getAll();
-  const invoices = InvoicesStorage.getAll();
-  const shipments = ShipmentsStorage.getAll();
-  const locations = LocationsStorage.getAll();
+  const [items, setItems] = useState<Item[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
 
-  // دالة مساعدة لتنسيق الأرقام بأمان
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
+          SupabaseItemsStorage.getAll(),
+          SupabaseSuppliersStorage.getAll(),
+          SupabaseInvoicesStorage.getAll(),
+          SupabaseShipmentsStorage.getAll()
+        ]);
+        setItems(itemsData);
+        setSuppliers(suppliersData);
+        setInvoices(invoicesData);
+        setShipments(shipmentsData);
+      } catch (error) {
+        console.error('خطأ في تحميل البيانات:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
   const safeToLocaleString = (value: number | undefined | null): string => {
     if (value === undefined || value === null || isNaN(value)) {
       return '0';
@@ -26,25 +49,21 @@ export default function Reports() {
     return value.toLocaleString('ar');
   };
 
-  // حساب الإحصائيات الحقيقية
   const totalItemsValue = items.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 0)), 0);
   const totalInvoicesValue = invoices.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0);
-  const totalShippingCosts = shipments.reduce((sum, shipment) => sum + (shipment?.shippingCost || 0), 0);
   const lowStockItems = items.filter(item => (item?.quantity || 0) < 20);
 
-  // تقرير المخزون
   const inventoryReport = {
     totalItems: items.length,
     totalValue: totalItemsValue,
     lowStockItems: lowStockItems.length,
     categories: items.reduce((acc, item) => {
-      const type = item?.type || 'غير محدد';
-      acc[type] = (acc[type] || 0) + 1;
+      const category = item?.category || 'غير محدد';
+      acc[category] = (acc[category] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
   };
 
-  // تقرير الموردين
   const suppliersReport = {
     totalSuppliers: suppliers.length,
     activeSuppliers: suppliers.length,
@@ -57,11 +76,10 @@ export default function Reports() {
     })).sort((a, b) => b.totalValue - a.totalValue)
   };
 
-  // تقرير التكاليف
   const costsReport = {
     totalPurchases: totalInvoicesValue,
-    totalShipping: totalShippingCosts,
-    totalCustoms: shipments.reduce((sum, shipment) => sum + (shipment?.customsFees || 0), 0),
+    totalShipping: 0,
+    totalCustoms: 0,
     monthlyTrend: [
       { month: 'يناير', amount: Math.round(totalInvoicesValue * 0.2) },
       { month: 'فبراير', amount: Math.round(totalInvoicesValue * 0.25) },
@@ -70,12 +88,11 @@ export default function Reports() {
     ]
   };
 
-  // تقرير الشحن الجديد
   const shippingReport = {
     totalShipments: shipments.length,
     inTransitShipments: shipments.filter(s => s?.status === 'in_transit').length,
     deliveredShipments: shipments.filter(s => s?.status === 'delivered').length,
-    averageShippingCost: shipments.length > 0 ? totalShippingCosts / shipments.length : 0,
+    averageShippingCost: 0,
     statusBreakdown: shipments.reduce((acc, shipment) => {
       const status = shipment?.status || 'غير محدد';
       acc[status] = (acc[status] || 0) + 1;
@@ -83,7 +100,6 @@ export default function Reports() {
     }, {} as Record<string, number>)
   };
 
-  // وظيفة تصدير التقرير
   const exportReport = () => {
     const reportData = {
       reportType: selectedReport,
@@ -289,28 +305,6 @@ export default function Reports() {
             <p className="text-xs text-gray-600">ريال سعودي</p>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">تكاليف الشحن</CardTitle>
-            <Package className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{safeToLocaleString(costsReport.totalShipping)}</div>
-            <p className="text-xs text-gray-600">ريال سعودي</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">الرسوم الجمركية</CardTitle>
-            <FileText className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{safeToLocaleString(costsReport.totalCustoms)}</div>
-            <p className="text-xs text-gray-600">ريال سعودي</p>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
@@ -351,7 +345,7 @@ export default function Reports() {
 
   const renderShippingReport = () => (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">إجمالي الشحنات</CardTitle>
@@ -379,17 +373,6 @@ export default function Reports() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{shippingReport.deliveredShipments}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">متوسط التكلفة</CardTitle>
-            <DollarSign className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{safeToLocaleString(shippingReport.averageShippingCost)}</div>
-            <p className="text-xs text-gray-600">ريال للشحنة</p>
           </CardContent>
         </Card>
       </div>
@@ -448,6 +431,17 @@ export default function Reports() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -461,7 +455,6 @@ export default function Reports() {
         </Button>
       </div>
 
-      {/* فلاتر التقارير */}
       <Card>
         <CardHeader>
           <CardTitle>إعدادات التقرير</CardTitle>
@@ -508,7 +501,6 @@ export default function Reports() {
         </CardContent>
       </Card>
 
-      {/* محتوى التقرير */}
       {renderReportContent()}
     </div>
   );

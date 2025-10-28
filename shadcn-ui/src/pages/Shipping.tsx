@@ -8,39 +8,33 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Edit, Trash2, Truck, Ship, Package, MapPin, Calendar, X } from 'lucide-react';
-import { mockShipments } from '@/data/mockData';
-import { Shipment, ShipmentItem } from '@/types';
-import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { ShipmentsStorage, ItemsStorage } from '@/lib/localStorage';
+import { Shipment, ShipmentItem, Item } from '@/types';
+import { generateContainerNumber, generateBillOfLading } from '@/lib/autoNumber';
+import { SupabaseShipmentsStorage, SupabaseItemsStorage } from '@/lib/supabaseStorage';
 
 export default function Shipping() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // حالات النموذج
   const [formData, setFormData] = useState({
-    shipmentNumber: '',
     containerNumber: '',
     billOfLading: '',
+    supplierId: '',
     status: '' as Shipment['status'] | '',
     departureDate: '',
-    arrivalDate: '',
-    shippingCost: '',
-    customsFees: ''
+    arrivalDate: ''
   });
 
-  // حالات الأصناف في الشحنة
   const [shipmentItems, setShipmentItems] = useState<ShipmentItem[]>([]);
   const [newItem, setNewItem] = useState({
     itemId: '',
-    quantity: '',
-    weight: '',
-    volume: ''
+    quantity: ''
   });
 
-  // دالة مساعدة لتنسيق الأرقام بأمان
   const safeToLocaleString = (value: number | undefined | null): string => {
     if (value === undefined || value === null || isNaN(value)) {
       return '0';
@@ -48,35 +42,50 @@ export default function Shipping() {
     return value.toLocaleString('ar');
   };
 
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    const storedShipments = ShipmentsStorage.getAll();
-    if (storedShipments.length > 0) {
-      setShipments(storedShipments);
-    } else {
-      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
-      setShipments(mockShipments);
-      ShipmentsStorage.save(mockShipments);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [shipmentsData, itemsData] = await Promise.all([
+        SupabaseShipmentsStorage.getAll(),
+        SupabaseItemsStorage.getAll()
+      ]);
+      setShipments(shipmentsData);
+      setItems(itemsData);
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe((newShipments) => {
+      setShipments(newShipments);
+    });
+
+    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
+      setItems(newItems);
+    });
+
+    return () => {
+      unsubscribeShipments();
+      unsubscribeItems();
+    };
   }, []);
 
-  // حفظ تلقائي عند تغيير الشحنات
-  useEffect(() => {
-    if (shipments.length > 0) {
-      ShipmentsStorage.save(shipments);
-    }
-  }, [shipments]);
-
   const filteredShipments = shipments.filter(shipment =>
-    shipment?.shipmentNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    shipment?.containerNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    shipment?.containerNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    shipment?.billOfLading?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getStatusBadge = (status: Shipment['status']) => {
     const statusConfig = {
+      pending: { label: 'معلق', variant: 'outline' as const, color: 'text-yellow-600' },
       in_transit: { label: 'في الطريق', variant: 'outline' as const, color: 'text-blue-600' },
       arrived: { label: 'وصل', variant: 'outline' as const, color: 'text-green-600' },
-      customs: { label: 'في الجمارك', variant: 'outline' as const, color: 'text-yellow-600' },
+      customs: { label: 'في الجمارك', variant: 'outline' as const, color: 'text-orange-600' },
       delivered: { label: 'تم التسليم', variant: 'outline' as const, color: 'text-purple-600' },
     };
     
@@ -104,39 +113,37 @@ export default function Shipping() {
   };
 
   const getItemName = (itemId: string) => {
-    const items = ItemsStorage.getAll();
     const item = items.find(i => i?.id === itemId);
     return item?.name || 'صنف غير محدد';
   };
 
   const resetForm = () => {
     setFormData({
-      shipmentNumber: '',
       containerNumber: '',
       billOfLading: '',
+      supplierId: '',
       status: '',
       departureDate: '',
-      arrivalDate: '',
-      shippingCost: '',
-      customsFees: ''
+      arrivalDate: ''
     });
     setShipmentItems([]);
     setNewItem({
       itemId: '',
-      quantity: '',
-      weight: '',
-      volume: ''
+      quantity: ''
     });
   };
 
-  const handleAddShipment = () => {
+  const handleAddShipment = async () => {
     setEditingShipment(null);
     resetForm();
+    const [containerNumber, billOfLading] = await Promise.all([
+      generateContainerNumber(),
+      generateBillOfLading()
+    ]);
     setFormData(prev => ({
       ...prev,
-      shipmentNumber: AutoNumberGenerator.generateShipmentNumber(),
-      containerNumber: AutoNumberGenerator.generateContainerNumber(),
-      billOfLading: AutoNumberGenerator.generateBillOfLading()
+      containerNumber,
+      billOfLading
     }));
     setIsDialogOpen(true);
   };
@@ -144,14 +151,12 @@ export default function Shipping() {
   const handleEditShipment = (shipment: Shipment) => {
     setEditingShipment(shipment);
     setFormData({
-      shipmentNumber: shipment?.shipmentNumber || '',
       containerNumber: shipment?.containerNumber || '',
       billOfLading: shipment?.billOfLading || '',
-      status: shipment?.status || 'in_transit',
-      departureDate: shipment?.departureDate ? shipment.departureDate.toISOString().split('T')[0] : '',
-      arrivalDate: shipment?.arrivalDate ? shipment.arrivalDate.toISOString().split('T')[0] : '',
-      shippingCost: (shipment?.shippingCost || 0).toString(),
-      customsFees: (shipment?.customsFees || 0).toString()
+      supplierId: shipment?.supplierId || '',
+      status: shipment?.status || 'pending',
+      departureDate: shipment?.departureDate ? new Date(shipment.departureDate).toISOString().split('T')[0] : '',
+      arrivalDate: shipment?.arrivalDate ? new Date(shipment.arrivalDate).toISOString().split('T')[0] : ''
     });
     setShipmentItems(shipment?.items || []);
     setIsDialogOpen(true);
@@ -165,17 +170,13 @@ export default function Shipping() {
 
     const item: ShipmentItem = {
       itemId: newItem.itemId,
-      quantity: parseInt(newItem.quantity) || 0,
-      weight: parseFloat(newItem.weight) || 0,
-      volume: parseFloat(newItem.volume) || 0
+      quantity: parseInt(newItem.quantity) || 0
     };
 
     setShipmentItems([...shipmentItems, item]);
     setNewItem({
       itemId: '',
-      quantity: '',
-      weight: '',
-      volume: ''
+      quantity: ''
     });
   };
 
@@ -183,87 +184,69 @@ export default function Shipping() {
     setShipmentItems(shipmentItems.filter((_, i) => i !== index));
   };
 
-  const updateInventoryOnDelivery = (items: ShipmentItem[], isDelivered: boolean) => {
-    if (!isDelivered) return;
-
-    const allItems = ItemsStorage.getAll();
-    let updated = false;
-
-    const updatedItems = allItems.map(item => {
-      const shipmentItem = items.find(si => si.itemId === item.id);
-      if (shipmentItem) {
-        updated = true;
-        return {
-          ...item,
-          quantity: (item.quantity || 0) + shipmentItem.quantity
-        };
-      }
-      return item;
-    });
-
-    if (updated) {
-      ItemsStorage.save(updatedItems);
-    }
-  };
-
-  const handleSaveShipment = () => {
-    if (!formData.shipmentNumber || !formData.containerNumber || !formData.status || !formData.departureDate) {
+  const handleSaveShipment = async () => {
+    if (!formData.containerNumber || !formData.status || !formData.departureDate) {
       alert('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    const newShipment: Shipment = {
-      id: editingShipment?.id || Date.now().toString(),
-      shipmentNumber: formData.shipmentNumber,
-      containerNumber: formData.containerNumber,
-      billOfLading: formData.billOfLading,
-      status: formData.status as Shipment['status'],
-      departureDate: new Date(formData.departureDate),
-      arrivalDate: formData.arrivalDate ? new Date(formData.arrivalDate) : null,
-      shippingCost: parseFloat(formData.shippingCost) || 0,
-      customsFees: parseFloat(formData.customsFees) || 0,
-      items: shipmentItems,
-      createdAt: editingShipment?.createdAt || new Date()
-    };
+    try {
+      const shipmentData = {
+        containerNumber: formData.containerNumber,
+        billOfLading: formData.billOfLading,
+        supplierId: formData.supplierId || null,
+        status: formData.status as Shipment['status'],
+        departureDate: formData.departureDate,
+        arrivalDate: formData.arrivalDate || null,
+        items: shipmentItems
+      };
 
-    // تحديث المخزون إذا كانت الحالة "تم التسليم"
-    if (formData.status === 'delivered' && (!editingShipment || editingShipment.status !== 'delivered')) {
-      updateInventoryOnDelivery(shipmentItems, true);
+      if (editingShipment) {
+        await SupabaseShipmentsStorage.update(editingShipment.id, shipmentData);
+      } else {
+        await SupabaseShipmentsStorage.add(shipmentData);
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('خطأ في حفظ الشحنة:', error);
+      alert('حدث خطأ أثناء حفظ الشحنة');
     }
-
-    if (editingShipment) {
-      // تحديث الشحنة الموجودة
-      const updatedShipments = shipments.map(shipment => 
-        shipment?.id === editingShipment.id ? newShipment : shipment
-      );
-      setShipments(updatedShipments);
-    } else {
-      // إضافة شحنة جديدة
-      setShipments([...shipments, newShipment]);
-    }
-
-    setIsDialogOpen(false);
-    resetForm();
   };
 
-  const handleDeleteShipment = (shipmentId: string) => {
+  const handleDeleteShipment = async (shipmentId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الشحنة؟')) {
-      const updatedShipments = shipments.filter(shipment => shipment?.id !== shipmentId);
-      setShipments(updatedShipments);
+      try {
+        await SupabaseShipmentsStorage.delete(shipmentId);
+      } catch (error) {
+        console.error('خطأ في حذف الشحنة:', error);
+        alert('حدث خطأ أثناء حذف الشحنة');
+      }
     }
   };
 
   const totalShipments = shipments.length;
   const inTransitShipments = shipments.filter(s => s?.status === 'in_transit').length;
   const deliveredShipments = shipments.filter(s => s?.status === 'delivered').length;
-  const totalShippingCost = shipments.reduce((sum, shipment) => sum + (shipment?.shippingCost || 0), 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">إدارة الشحن</h1>
-          <p className="text-gray-600 mt-2">تتبع جميع الشحنات والحاويات مع إدارة الأصناف</p>
+          <p className="text-gray-600 mt-2">تتبع جميع الشحنات والحاويات</p>
         </div>
         <Button onClick={handleAddShipment} className="flex items-center">
           <Plus className="h-4 w-4 ml-2" />
@@ -271,8 +254,7 @@ export default function Shipping() {
         </Button>
       </div>
 
-      {/* إحصائيات سريعة */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">إجمالي الشحنات</CardTitle>
@@ -305,20 +287,8 @@ export default function Shipping() {
             <p className="text-xs text-gray-600">شحنة مسلمة</p>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">تكلفة الشحن</CardTitle>
-            <Truck className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{safeToLocaleString(totalShippingCost)}</div>
-            <p className="text-xs text-gray-600">ريال سعودي</p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* شريط البحث والفلاتر */}
       <Card>
         <CardHeader>
           <CardTitle>البحث والفلتر</CardTitle>
@@ -328,29 +298,16 @@ export default function Shipping() {
             <div className="flex-1 relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
-                placeholder="البحث برقم الشحنة أو الحاوية..."
+                placeholder="البحث برقم الحاوية أو بوليصة الشحن..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pr-10"
               />
             </div>
-            <Select>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="فلتر حسب الحالة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع الحالات</SelectItem>
-                <SelectItem value="in_transit">في الطريق</SelectItem>
-                <SelectItem value="arrived">وصل</SelectItem>
-                <SelectItem value="customs">في الجمارك</SelectItem>
-                <SelectItem value="delivered">تم التسليم</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* جدول الشحنات */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -363,30 +320,27 @@ export default function Shipping() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>رقم الشحنة</TableHead>
                 <TableHead>رقم الحاوية</TableHead>
                 <TableHead>بوليصة الشحن</TableHead>
                 <TableHead>عدد الأصناف</TableHead>
                 <TableHead>تاريخ المغادرة</TableHead>
                 <TableHead>تاريخ الوصول</TableHead>
-                <TableHead>تكلفة الشحن</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead>الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredShipments.map((shipment) => {
-                const StatusIcon = getStatusIcon(shipment?.status || 'in_transit');
+                const StatusIcon = getStatusIcon(shipment?.status || 'pending');
                 
                 return (
                   <TableRow key={shipment?.id || Math.random()}>
                     <TableCell className="font-medium">
                       <div className="flex items-center">
                         <StatusIcon className="h-4 w-4 ml-2 text-gray-500" />
-                        {shipment?.shipmentNumber || 'غير محدد'}
+                        {shipment?.containerNumber || 'غير محدد'}
                       </div>
                     </TableCell>
-                    <TableCell>{shipment?.containerNumber || 'غير محدد'}</TableCell>
                     <TableCell>{shipment?.billOfLading || 'غير محدد'}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
@@ -396,20 +350,19 @@ export default function Shipping() {
                     <TableCell>
                       <div className="flex items-center">
                         <Calendar className="h-3 w-3 ml-1" />
-                        {shipment?.departureDate ? shipment.departureDate.toLocaleDateString('ar-SA') : 'غير محدد'}
+                        {shipment?.departureDate ? new Date(shipment.departureDate).toLocaleDateString('ar-SA') : 'غير محدد'}
                       </div>
                     </TableCell>
                     <TableCell>
                       {shipment?.arrivalDate ? (
                         <div className="flex items-center">
                           <Calendar className="h-3 w-3 ml-1" />
-                          {shipment.arrivalDate.toLocaleDateString('ar-SA')}
+                          {new Date(shipment.arrivalDate).toLocaleDateString('ar-SA')}
                         </div>
                       ) : (
                         <span className="text-gray-400">لم يصل بعد</span>
                       )}
                     </TableCell>
-                    <TableCell>{safeToLocaleString(shipment?.shippingCost)} ريال</TableCell>
                     <TableCell>{shipment?.status ? getStatusBadge(shipment.status) : 'غير محدد'}</TableCell>
                     <TableCell>
                       <div className="flex space-x-2 space-x-reverse">
@@ -438,7 +391,6 @@ export default function Shipping() {
         </CardContent>
       </Card>
 
-      {/* نافذة إضافة/تعديل الشحنة */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -450,17 +402,7 @@ export default function Shipping() {
             </DialogDescription>
           </DialogHeader>
           
-          {/* بيانات الشحنة الأساسية */}
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="space-y-2">
-              <Label htmlFor="shipmentNumber">رقم الشحنة</Label>
-              <Input 
-                id="shipmentNumber" 
-                value={formData.shipmentNumber}
-                disabled
-                className="bg-gray-50"
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="containerNumber">رقم الحاوية</Label>
               <Input 
@@ -486,6 +428,7 @@ export default function Shipping() {
                   <SelectValue placeholder="اختر حالة الشحنة" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="pending">معلق</SelectItem>
                   <SelectItem value="in_transit">في الطريق</SelectItem>
                   <SelectItem value="arrived">وصل</SelectItem>
                   <SelectItem value="customs">في الجمارك</SelectItem>
@@ -511,34 +454,12 @@ export default function Shipping() {
                 onChange={(e) => setFormData(prev => ({...prev, arrivalDate: e.target.value}))}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="shippingCost">تكلفة الشحن</Label>
-              <Input 
-                id="shippingCost" 
-                type="number" 
-                placeholder="أدخل تكلفة الشحن"
-                value={formData.shippingCost}
-                onChange={(e) => setFormData(prev => ({...prev, shippingCost: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customsFees">الرسوم الجمركية</Label>
-              <Input 
-                id="customsFees" 
-                type="number" 
-                placeholder="أدخل الرسوم الجمركية"
-                value={formData.customsFees}
-                onChange={(e) => setFormData(prev => ({...prev, customsFees: e.target.value}))}
-              />
-            </div>
           </div>
 
-          {/* إضافة الأصناف */}
           <div className="border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold mb-4">أصناف الشحنة</h3>
             
-            {/* نموذج إضافة صنف جديد */}
-            <div className="grid grid-cols-5 gap-4 mb-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="space-y-2">
                 <Label>الصنف</Label>
                 <Select value={newItem.itemId} onValueChange={(value) => setNewItem(prev => ({...prev, itemId: value}))}>
@@ -546,7 +467,7 @@ export default function Shipping() {
                     <SelectValue placeholder="اختر الصنف" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ItemsStorage.getAll().map((item) => (
+                    {items.map((item) => (
                       <SelectItem key={item?.id} value={item?.id || ''}>
                         {item?.name || 'غير محدد'}
                       </SelectItem>
@@ -564,24 +485,6 @@ export default function Shipping() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>الوزن (كجم)</Label>
-                <Input 
-                  type="number" 
-                  placeholder="الوزن"
-                  value={newItem.weight}
-                  onChange={(e) => setNewItem(prev => ({...prev, weight: e.target.value}))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>الحجم (م³)</Label>
-                <Input 
-                  type="number" 
-                  placeholder="الحجم"
-                  value={newItem.volume}
-                  onChange={(e) => setNewItem(prev => ({...prev, volume: e.target.value}))}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label>&nbsp;</Label>
                 <Button onClick={handleAddItem} className="w-full">
                   إضافة الصنف
@@ -589,15 +492,12 @@ export default function Shipping() {
               </div>
             </div>
 
-            {/* قائمة الأصناف المضافة */}
             {shipmentItems.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>الصنف</TableHead>
                     <TableHead>الكمية</TableHead>
-                    <TableHead>الوزن (كجم)</TableHead>
-                    <TableHead>الحجم (م³)</TableHead>
                     <TableHead>إجراء</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -606,8 +506,6 @@ export default function Shipping() {
                     <TableRow key={index}>
                       <TableCell>{getItemName(item?.itemId || '')}</TableCell>
                       <TableCell>{item?.quantity || 0}</TableCell>
-                      <TableCell>{item?.weight || 0}</TableCell>
-                      <TableCell>{item?.volume || 0}</TableCell>
                       <TableCell>
                         <Button
                           variant="outline"

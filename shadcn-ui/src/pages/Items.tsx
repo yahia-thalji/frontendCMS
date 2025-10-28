@@ -9,31 +9,30 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
-import { mockItems, mockSuppliers, mockLocations } from '@/data/mockData';
-import { Item } from '@/types';
-import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { ItemsStorage, SuppliersStorage, LocationsStorage } from '@/lib/localStorage';
+import { Item, Supplier, Location } from '@/types';
+import { generateItemNumber } from '@/lib/autoNumber';
+import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
 
 export default function Items() {
   const [items, setItems] = useState<Item[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // حالات النموذج
   const [formData, setFormData] = useState({
     name: '',
-    referenceNumber: '',
-    type: '',
+    itemNumber: '',
+    description: '',
     supplierId: '',
-    price: '',
-    unit: '',
-    specifications: '',
     quantity: '0',
-    locationId: ''
+    unit: '',
+    price: '',
+    category: ''
   });
 
-  // دالة مساعدة لتنسيق الأرقام بأمان
   const safeToLocaleString = (value: number | undefined | null): string => {
     if (value === undefined || value === null || isNaN(value)) {
       return '0';
@@ -41,66 +40,77 @@ export default function Items() {
     return value.toLocaleString('ar');
   };
 
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    const storedItems = ItemsStorage.getAll();
-    if (storedItems.length > 0) {
-      setItems(storedItems);
-    } else {
-      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
-      setItems(mockItems);
-      ItemsStorage.save(mockItems);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [itemsData, suppliersData, locationsData] = await Promise.all([
+        SupabaseItemsStorage.getAll(),
+        SupabaseSuppliersStorage.getAll(),
+        SupabaseLocationsStorage.getAll()
+      ]);
+      setItems(itemsData);
+      setSuppliers(suppliersData);
+      setLocations(locationsData);
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  };
 
-  // حفظ تلقائي عند تغيير الأصناف
   useEffect(() => {
-    if (items.length > 0) {
-      ItemsStorage.save(items);
-    }
-  }, [items]);
+    loadData();
+
+    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
+      setItems(newItems);
+    });
+
+    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
+      setSuppliers(newSuppliers);
+    });
+
+    const unsubscribeLocations = SupabaseLocationsStorage.subscribe((newLocations) => {
+      setLocations(newLocations);
+    });
+
+    return () => {
+      unsubscribeItems();
+      unsubscribeSuppliers();
+      unsubscribeLocations();
+    };
+  }, []);
 
   const filteredItems = items.filter(item =>
     item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item?.referenceNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    item?.itemNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSupplierName = (supplierId: string) => {
     if (!supplierId) return 'غير محدد';
-    const storedSuppliers = SuppliersStorage.getAll();
-    const allSuppliers = storedSuppliers.length > 0 ? storedSuppliers : mockSuppliers;
-    const supplier = allSuppliers.find(s => s?.id === supplierId);
+    const supplier = suppliers.find(s => s?.id === supplierId);
     return supplier?.name || 'غير محدد';
-  };
-
-  const getLocationName = (locationId?: string) => {
-    if (!locationId) return 'غير محدد';
-    const storedLocations = LocationsStorage.getAll();
-    const allLocations = storedLocations.length > 0 ? storedLocations : mockLocations;
-    const location = allLocations.find(l => l?.id === locationId);
-    return location?.name || 'غير محدد';
   };
 
   const resetForm = () => {
     setFormData({
       name: '',
-      referenceNumber: '',
-      type: '',
+      itemNumber: '',
+      description: '',
       supplierId: '',
-      price: '',
-      unit: '',
-      specifications: '',
       quantity: '0',
-      locationId: ''
+      unit: '',
+      price: '',
+      category: ''
     });
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     setEditingItem(null);
     resetForm();
+    const itemNumber = await generateItemNumber();
     setFormData(prev => ({
       ...prev,
-      referenceNumber: AutoNumberGenerator.generateItemNumber()
+      itemNumber
     }));
     setIsDialogOpen(true);
   };
@@ -109,57 +119,70 @@ export default function Items() {
     setEditingItem(item);
     setFormData({
       name: item?.name || '',
-      referenceNumber: item?.referenceNumber || '',
-      type: item?.type || '',
+      itemNumber: item?.itemNumber || '',
+      description: item?.description || '',
       supplierId: item?.supplierId || '',
-      price: (item?.price || 0).toString(),
-      unit: item?.unit || '',
-      specifications: item?.specifications || '',
       quantity: (item?.quantity || 0).toString(),
-      locationId: item?.locationId || ''
+      unit: item?.unit || '',
+      price: (item?.price || 0).toString(),
+      category: item?.category || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleSaveItem = () => {
-    if (!formData.name || !formData.type || !formData.supplierId || !formData.price) {
+  const handleSaveItem = async () => {
+    if (!formData.name || !formData.supplierId || !formData.price) {
       alert('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    const newItem: Item = {
-      id: editingItem?.id || Date.now().toString(),
-      name: formData.name,
-      referenceNumber: formData.referenceNumber,
-      type: formData.type,
-      supplierId: formData.supplierId,
-      price: parseFloat(formData.price) || 0,
-      unit: formData.unit,
-      specifications: formData.specifications,
-      quantity: parseInt(formData.quantity) || 0,
-      locationId: formData.locationId || undefined,
-      createdAt: editingItem?.createdAt || new Date()
-    };
+    try {
+      const itemData = {
+        name: formData.name,
+        itemNumber: formData.itemNumber,
+        description: formData.description,
+        supplierId: formData.supplierId,
+        quantity: parseInt(formData.quantity) || 0,
+        unit: formData.unit,
+        price: parseFloat(formData.price) || 0,
+        category: formData.category
+      };
 
-    if (editingItem) {
-      // تحديث الصنف الموجود
-      const updatedItems = items.map(item => item?.id === editingItem.id ? newItem : item);
-      setItems(updatedItems);
-    } else {
-      // إضافة صنف جديد
-      setItems([...items, newItem]);
+      if (editingItem) {
+        await SupabaseItemsStorage.update(editingItem.id, itemData);
+      } else {
+        await SupabaseItemsStorage.add(itemData);
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('خطأ في حفظ الصنف:', error);
+      alert('حدث خطأ أثناء حفظ الصنف');
     }
-
-    setIsDialogOpen(false);
-    resetForm();
   };
 
-  const handleDeleteItem = (itemId: string) => {
+  const handleDeleteItem = async (itemId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الصنف؟')) {
-      const updatedItems = items.filter(item => item?.id !== itemId);
-      setItems(updatedItems);
+      try {
+        await SupabaseItemsStorage.delete(itemId);
+      } catch (error) {
+        console.error('خطأ في حذف الصنف:', error);
+        alert('حدث خطأ أثناء حذف الصنف');
+      }
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -174,7 +197,6 @@ export default function Items() {
         </Button>
       </div>
 
-      {/* شريط البحث والفلاتر */}
       <Card>
         <CardHeader>
           <CardTitle>البحث والفلتر</CardTitle>
@@ -190,21 +212,10 @@ export default function Items() {
                 className="pr-10"
               />
             </div>
-            <Select>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="فلتر حسب النوع" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع الأنواع</SelectItem>
-                <SelectItem value="industrial">معدات صناعية</SelectItem>
-                <SelectItem value="spare_parts">قطع غيار</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* جدول الأصناف */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -219,9 +230,8 @@ export default function Items() {
               <TableRow>
                 <TableHead>الاسم</TableHead>
                 <TableHead>الرقم المرجعي</TableHead>
-                <TableHead>النوع</TableHead>
+                <TableHead>الفئة</TableHead>
                 <TableHead>المورد</TableHead>
-                <TableHead>الموقع</TableHead>
                 <TableHead>الكمية</TableHead>
                 <TableHead>السعر</TableHead>
                 <TableHead>الإجراءات</TableHead>
@@ -231,12 +241,11 @@ export default function Items() {
               {filteredItems.map((item) => (
                 <TableRow key={item?.id || Math.random()}>
                   <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
-                  <TableCell>{item?.referenceNumber || 'غير محدد'}</TableCell>
+                  <TableCell>{item?.itemNumber || 'غير محدد'}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{item?.type || 'غير محدد'}</Badge>
+                    <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
                   </TableCell>
                   <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
-                  <TableCell>{getLocationName(item?.locationId)}</TableCell>
                   <TableCell>
                     <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
                       {item?.quantity || 0} {item?.unit || ''}
@@ -269,7 +278,6 @@ export default function Items() {
         </CardContent>
       </Card>
 
-      {/* نافذة إضافة/تعديل الصنف */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -291,26 +299,22 @@ export default function Items() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="reference">الرقم المرجعي</Label>
+              <Label htmlFor="itemNumber">الرقم المرجعي</Label>
               <Input 
-                id="reference" 
-                value={formData.referenceNumber}
+                id="itemNumber" 
+                value={formData.itemNumber}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="type">النوع *</Label>
-              <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({...prev, type: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر النوع" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="معدات صناعية">معدات صناعية</SelectItem>
-                  <SelectItem value="قطع غيار">قطع غيار</SelectItem>
-                  <SelectItem value="مواد خام">مواد خام</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="category">الفئة *</Label>
+              <Input 
+                id="category" 
+                placeholder="أدخل الفئة"
+                value={formData.category}
+                onChange={(e) => setFormData(prev => ({...prev, category: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="supplier">المورد *</Label>
@@ -319,7 +323,7 @@ export default function Items() {
                   <SelectValue placeholder="اختر المورد" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(SuppliersStorage.getAll().length > 0 ? SuppliersStorage.getAll() : mockSuppliers).map((supplier) => (
+                  {suppliers.map((supplier) => (
                     <SelectItem key={supplier?.id} value={supplier?.id || ''}>
                       {supplier?.name || 'غير محدد'}
                     </SelectItem>
@@ -339,17 +343,12 @@ export default function Items() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="unit">وحدة القياس *</Label>
-              <Select value={formData.unit} onValueChange={(value) => setFormData(prev => ({...prev, unit: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الوحدة" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="قطعة">قطعة</SelectItem>
-                  <SelectItem value="كيلوجرام">كيلوجرام</SelectItem>
-                  <SelectItem value="لتر">لتر</SelectItem>
-                  <SelectItem value="متر">متر</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                id="unit" 
+                placeholder="مثال: قطعة، كجم"
+                value={formData.unit}
+                onChange={(e) => setFormData(prev => ({...prev, unit: e.target.value}))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="quantity">الكمية</Label>
@@ -361,28 +360,13 @@ export default function Items() {
                 onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="location">الموقع</Label>
-              <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الموقع" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(LocationsStorage.getAll().length > 0 ? LocationsStorage.getAll() : mockLocations).map((location) => (
-                    <SelectItem key={location?.id} value={location?.id || ''}>
-                      {location?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="specifications">المواصفات</Label>
+              <Label htmlFor="description">الوصف</Label>
               <Textarea 
-                id="specifications" 
-                placeholder="أدخل مواصفات الصنف"
-                value={formData.specifications}
-                onChange={(e) => setFormData(prev => ({...prev, specifications: e.target.value}))}
+                id="description" 
+                placeholder="أدخل وصف الصنف"
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
               />
             </div>
           </div>

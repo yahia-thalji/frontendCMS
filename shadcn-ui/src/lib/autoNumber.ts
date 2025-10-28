@@ -1,87 +1,61 @@
-import { CountersStorage } from './localStorage';
+import { SupabaseCountersStorage } from './supabaseStorage';
 
-export class AutoNumberGenerator {
-  // توليد رقم الفاتورة: INV-YYYYMM-XXX
-  static generateInvoiceNumber(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const counter = CountersStorage.updateCounter('invoices');
-    const sequence = String(counter).padStart(3, '0');
-    return `INV-${year}${month}-${sequence}`;
+export const generateItemNumber = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('items');
+    return `ITEM-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الصنف:', error);
+    return `ITEM-${Date.now()}`;
   }
+};
 
-  // توليد رقم المورد: SUP-YYYY-XXXX
-  static generateSupplierNumber(): string {
-    const year = new Date().getFullYear();
-    const counter = CountersStorage.updateCounter('suppliers');
-    const sequence = String(counter).padStart(4, '0');
-    return `SUP-${year}-${sequence}`;
+export const generateSupplierNumber = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('suppliers');
+    return `SUP-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم المورد:', error);
+    return `SUP-${Date.now()}`;
   }
+};
 
-  // توليد رقم الصنف: ITM-YYYY-XXXX
-  static generateItemNumber(): string {
-    const year = new Date().getFullYear();
-    const counter = CountersStorage.updateCounter('items');
-    const sequence = String(counter).padStart(4, '0');
-    return `ITM-${year}-${sequence}`;
+export const generateLocationNumber = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('locations');
+    return `LOC-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الموقع:', error);
+    return `LOC-${Date.now()}`;
   }
+};
 
-  // توليد رقم الموقع: LOC-YYYY-XXX
-  static generateLocationNumber(): string {
-    const year = new Date().getFullYear();
-    const counter = CountersStorage.updateCounter('locations');
-    const sequence = String(counter).padStart(3, '0');
-    return `LOC-${year}-${sequence}`;
+export const generateContainerNumber = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('containers');
+    return `CONT-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الحاوية:', error);
+    return `CONT-${Date.now()}`;
   }
+};
 
-  // توليد رقم الشحنة: SH-YYYYMM-XXX
-  static generateShipmentNumber(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const counter = CountersStorage.updateCounter('shipments');
-    const sequence = String(counter).padStart(3, '0');
-    return `SH-${year}${month}-${sequence}`;
+export const generateBillOfLading = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('bill_of_lading');
+    return `BOL-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم بوليصة الشحن:', error);
+    return `BOL-${Date.now()}`;
   }
+};
 
-  // توليد رقم الحاوية: ABCD123456X (تنسيق دولي)
-  static generateContainerNumber(): string {
-    const counter = CountersStorage.updateCounter('containers');
-    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
-    
-    // توليد 4 أحرف عشوائية
-    const randomLetters = Array.from({ length: 4 }, () => 
-      letters[Math.floor(Math.random() * letters.length)]
-    ).join('');
-    
-    // رقم تسلسلي من 6 أرقام
-    const sequence = String(counter).padStart(6, '0');
-    
-    // رقم تحقق (check digit) - مبسط
-    const checkDigit = (counter % 10);
-    
-    return `${randomLetters}${sequence}${checkDigit}`;
+export const generateInvoiceNumber = async (): Promise<string> => {
+  try {
+    const counter = await SupabaseCountersStorage.updateCounter('invoices');
+    return `INV-${String(counter).padStart(6, '0')}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الفاتورة:', error);
+    return `INV-${Date.now()}`;
   }
-
-  // توليد رقم بوليصة الشحن: BL-YYYYMMDD-XXX
-  static generateBillOfLading(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const counter = CountersStorage.updateCounter('billOfLading');
-    const sequence = String(counter).padStart(3, '0');
-    return `BL-${year}${month}${day}-${sequence}`;
-  }
-
-  // إعادة تعيين جميع العدادات
-  static resetAllCounters(): void {
-    CountersStorage.resetCounters();
-  }
-
-  // الحصول على العدادات الحالية
-  static getCurrentCounters() {
-    return CountersStorage.getCounters();
-  }
-}
+};

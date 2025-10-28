@@ -14,7 +14,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import { Item, Supplier, Invoice, Shipment } from '@/types';
-import { ItemsStorage, SuppliersStorage, InvoicesStorage, ShipmentsStorage } from '@/lib/localStorage';
+import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseInvoicesStorage, SupabaseShipmentsStorage } from '@/lib/supabaseStorage';
 
 export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
@@ -23,7 +23,6 @@ export default function Dashboard() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // دالة مساعدة لتنسيق الأرقام بأمان
   const safeToLocaleString = (value: number | undefined | null): string => {
     if (value === undefined || value === null || isNaN(value)) {
       return '0';
@@ -31,14 +30,19 @@ export default function Dashboard() {
     return value.toLocaleString('ar');
   };
 
-  // تحميل البيانات
-  const loadData = () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      setItems(ItemsStorage.getAll());
-      setSuppliers(SuppliersStorage.getAll());
-      setInvoices(InvoicesStorage.getAll());
-      setShipments(ShipmentsStorage.getAll());
+      const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
+        SupabaseItemsStorage.getAll(),
+        SupabaseSuppliersStorage.getAll(),
+        SupabaseInvoicesStorage.getAll(),
+        SupabaseShipmentsStorage.getAll()
+      ]);
+      setItems(itemsData);
+      setSuppliers(suppliersData);
+      setInvoices(invoicesData);
+      setShipments(shipmentsData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
     } finally {
@@ -48,9 +52,31 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
+
+    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
+      setItems(newItems);
+    });
+
+    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
+      setSuppliers(newSuppliers);
+    });
+
+    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe((newInvoices) => {
+      setInvoices(newInvoices);
+    });
+
+    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe((newShipments) => {
+      setShipments(newShipments);
+    });
+
+    return () => {
+      unsubscribeItems();
+      unsubscribeSuppliers();
+      unsubscribeInvoices();
+      unsubscribeShipments();
+    };
   }, []);
 
-  // حساب الإحصائيات
   const totalItems = items.length;
   const totalSuppliers = suppliers.length;
   const totalInvoices = invoices.length;
@@ -101,7 +127,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* رأس الصفحة */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">لوحة التحكم</h1>
@@ -109,7 +134,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* الإحصائيات السريعة */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -160,7 +184,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* التنبيهات والإشعارات */}
       {(lowStockItems.length > 0 || pendingInvoices.length > 0 || inTransitShipments.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {lowStockItems.length > 0 && (
@@ -210,9 +233,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* الجداول */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* أحدث الأصناف */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -251,7 +272,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* أحدث الفواتير */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -291,7 +311,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* روابط سريعة */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">

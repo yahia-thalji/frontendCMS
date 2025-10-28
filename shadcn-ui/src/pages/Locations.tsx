@@ -10,41 +10,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Plus, Search, Edit, Trash2, MapPin, Warehouse, Archive } from 'lucide-react';
-import { mockLocations } from '@/data/mockData';
 import { Location } from '@/types';
-import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { LocationsStorage } from '@/lib/localStorage';
+import { generateLocationNumber } from '@/lib/autoNumber';
+import { SupabaseLocationsStorage } from '@/lib/supabaseStorage';
 
 export default function Locations() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // حالات النموذج
   const [formData, setFormData] = useState({
     locationNumber: '',
     name: '',
     type: '' as Location['type'] | '',
     capacity: '',
-    currentStock: '',
-    description: ''
+    currentUsage: '',
+    address: ''
   });
 
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    const storedLocations = LocationsStorage.getAll();
-    if (storedLocations.length > 0) {
-      setLocations(storedLocations);
-    } else {
-      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
-      setLocations(mockLocations);
-      LocationsStorage.save(mockLocations);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await SupabaseLocationsStorage.getAll();
+      setLocations(data);
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    const unsubscribe = SupabaseLocationsStorage.subscribe((newLocations) => {
+      setLocations(newLocations);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const filteredLocations = locations.filter(location =>
-    location.name.toLowerCase().includes(searchTerm.toLowerCase())
+    location?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getLocationIcon = (type: Location['type']) => {
@@ -85,17 +96,18 @@ export default function Locations() {
       name: '',
       type: '',
       capacity: '',
-      currentStock: '',
-      description: ''
+      currentUsage: '',
+      address: ''
     });
   };
 
-  const handleAddLocation = () => {
+  const handleAddLocation = async () => {
     setEditingLocation(null);
     resetForm();
+    const locationNumber = await generateLocationNumber();
     setFormData(prev => ({
       ...prev,
-      locationNumber: AutoNumberGenerator.generateLocationNumber()
+      locationNumber
     }));
     setIsDialogOpen(true);
   };
@@ -103,58 +115,71 @@ export default function Locations() {
   const handleEditLocation = (location: Location) => {
     setEditingLocation(location);
     setFormData({
-      locationNumber: `LOC-2024-${location.id.padStart(3, '0')}`,
-      name: location.name,
-      type: location.type,
-      capacity: location.capacity.toString(),
-      currentStock: location.currentStock.toString(),
-      description: location.description || ''
+      locationNumber: location?.locationNumber || '',
+      name: location?.name || '',
+      type: location?.type || 'warehouse',
+      capacity: (location?.capacity || 0).toString(),
+      currentUsage: (location?.currentUsage || 0).toString(),
+      address: location?.address || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleSaveLocation = () => {
+  const handleSaveLocation = async () => {
     if (!formData.name || !formData.type || !formData.capacity) {
       alert('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    const newLocation: Location = {
-      id: editingLocation?.id || Date.now().toString(),
-      name: formData.name,
-      type: formData.type as Location['type'],
-      capacity: parseInt(formData.capacity) || 0,
-      currentStock: parseInt(formData.currentStock) || 0,
-      description: formData.description
-    };
+    try {
+      const locationData = {
+        locationNumber: formData.locationNumber,
+        name: formData.name,
+        type: formData.type as Location['type'],
+        capacity: parseInt(formData.capacity) || 0,
+        currentUsage: parseInt(formData.currentUsage) || 0,
+        address: formData.address
+      };
 
-    if (editingLocation) {
-      // تحديث الموقع الموجود
-      LocationsStorage.update(editingLocation.id, newLocation);
-      const updatedLocations = locations.map(location => 
-        location.id === editingLocation.id ? newLocation : location
-      );
-      setLocations(updatedLocations);
-    } else {
-      // إضافة موقع جديد
-      LocationsStorage.add(newLocation);
-      setLocations([...locations, newLocation]);
+      if (editingLocation) {
+        await SupabaseLocationsStorage.update(editingLocation.id, locationData);
+      } else {
+        await SupabaseLocationsStorage.add(locationData);
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('خطأ في حفظ الموقع:', error);
+      alert('حدث خطأ أثناء حفظ الموقع');
     }
-
-    setIsDialogOpen(false);
-    resetForm();
   };
 
-  const handleDeleteLocation = (locationId: string) => {
+  const handleDeleteLocation = async (locationId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الموقع؟')) {
-      LocationsStorage.delete(locationId);
-      setLocations(locations.filter(location => location.id !== locationId));
+      try {
+        await SupabaseLocationsStorage.delete(locationId);
+      } catch (error) {
+        console.error('خطأ في حذف الموقع:', error);
+        alert('حدث خطأ أثناء حذف الموقع');
+      }
     }
   };
 
-  const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
-  const totalUsed = locations.reduce((sum, location) => sum + location.currentStock, 0);
+  const totalCapacity = locations.reduce((sum, location) => sum + (location?.capacity || 0), 0);
+  const totalUsed = locations.reduce((sum, location) => sum + (location?.currentUsage || 0), 0);
   const utilizationRate = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -169,7 +194,6 @@ export default function Locations() {
         </Button>
       </div>
 
-      {/* إحصائيات سريعة */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -216,7 +240,6 @@ export default function Locations() {
         </Card>
       </div>
 
-      {/* شريط البحث والفلاتر */}
       <Card>
         <CardHeader>
           <CardTitle>البحث والفلتر</CardTitle>
@@ -232,22 +255,10 @@ export default function Locations() {
                 className="pr-10"
               />
             </div>
-            <Select>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="فلتر حسب النوع" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع الأنواع</SelectItem>
-                <SelectItem value="warehouse">مخزن</SelectItem>
-                <SelectItem value="shelf">رف</SelectItem>
-                <SelectItem value="section">قسم</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* جدول المواقع */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -266,31 +277,30 @@ export default function Locations() {
                 <TableHead>السعة</TableHead>
                 <TableHead>المخزون الحالي</TableHead>
                 <TableHead>معدل الاستخدام</TableHead>
-                <TableHead>الوصف</TableHead>
                 <TableHead>الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredLocations.map((location) => {
-                const Icon = getLocationIcon(location.type);
-                const percentage = getCapacityPercentage(location.currentStock, location.capacity);
+                const Icon = getLocationIcon(location?.type || 'warehouse');
+                const percentage = getCapacityPercentage(location?.currentUsage || 0, location?.capacity || 1);
                 const colorClass = getCapacityColor(percentage);
                 
                 return (
-                  <TableRow key={location.id}>
-                    <TableCell className="font-medium">LOC-2024-{location.id.padStart(3, '0')}</TableCell>
+                  <TableRow key={location?.id}>
+                    <TableCell className="font-medium">{location?.locationNumber || 'غير محدد'}</TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center">
                         <Icon className="h-4 w-4 ml-2 text-gray-500" />
-                        {location.name}
+                        {location?.name || 'غير محدد'}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{getTypeLabel(location.type)}</Badge>
+                      <Badge variant="outline">{getTypeLabel(location?.type || 'warehouse')}</Badge>
                     </TableCell>
-                    <TableCell>{location.capacity.toLocaleString('ar')}</TableCell>
+                    <TableCell>{(location?.capacity || 0).toLocaleString('ar')}</TableCell>
                     <TableCell className={colorClass}>
-                      {location.currentStock.toLocaleString('ar')}
+                      {(location?.currentUsage || 0).toLocaleString('ar')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2 space-x-reverse">
@@ -299,9 +309,6 @@ export default function Locations() {
                           {percentage}%
                         </span>
                       </div>
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {location.description || 'لا يوجد وصف'}
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-2 space-x-reverse">
@@ -315,7 +322,7 @@ export default function Locations() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteLocation(location.id)}
+                          onClick={() => handleDeleteLocation(location?.id || '')}
                           className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -330,7 +337,6 @@ export default function Locations() {
         </CardContent>
       </Card>
 
-      {/* نافذة إضافة/تعديل الموقع */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -384,22 +390,22 @@ export default function Locations() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="currentStock">المخزون الحالي</Label>
+              <Label htmlFor="currentUsage">المخزون الحالي</Label>
               <Input 
-                id="currentStock" 
+                id="currentUsage" 
                 type="number" 
                 placeholder="أدخل المخزون الحالي"
-                value={formData.currentStock}
-                onChange={(e) => setFormData(prev => ({...prev, currentStock: e.target.value}))}
+                value={formData.currentUsage}
+                onChange={(e) => setFormData(prev => ({...prev, currentUsage: e.target.value}))}
               />
             </div>
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="description">الوصف</Label>
+              <Label htmlFor="address">العنوان</Label>
               <Textarea 
-                id="description" 
-                placeholder="أدخل وصف الموقع (اختياري)"
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
+                id="address" 
+                placeholder="أدخل عنوان الموقع (اختياري)"
+                value={formData.address}
+                onChange={(e) => setFormData(prev => ({...prev, address: e.target.value}))}
               />
             </div>
           </div>

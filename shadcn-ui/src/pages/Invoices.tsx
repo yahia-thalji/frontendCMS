@@ -8,21 +8,23 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Edit, Trash2, FileText, Calendar, DollarSign, AlertTriangle } from 'lucide-react';
-import { mockInvoices, mockSuppliers, mockItems } from '@/data/mockData';
-import { Invoice, InvoiceItem } from '@/types';
-import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { InvoicesStorage, SuppliersStorage, ItemsStorage } from '@/lib/localStorage';
+import { Invoice, InvoiceItem, Supplier, Item } from '@/types';
+import { generateInvoiceNumber } from '@/lib/autoNumber';
+import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage } from '@/lib/supabaseStorage';
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // حالات النموذج
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     supplierId: '',
+    issueDate: '',
     dueDate: '',
     status: '' as Invoice['status'] | '',
     notes: ''
@@ -35,7 +37,6 @@ export default function Invoices() {
     unitPrice: ''
   });
 
-  // دالة مساعدة لتنسيق الأرقام بأمان
   const safeToLocaleString = (value: number | undefined | null): string => {
     if (value === undefined || value === null || isNaN(value)) {
       return '0';
@@ -43,24 +44,45 @@ export default function Invoices() {
     return value.toLocaleString('ar');
   };
 
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    const storedInvoices = InvoicesStorage.getAll();
-    if (storedInvoices.length > 0) {
-      setInvoices(storedInvoices);
-    } else {
-      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
-      setInvoices(mockInvoices);
-      InvoicesStorage.save(mockInvoices);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [invoicesData, suppliersData, itemsData] = await Promise.all([
+        SupabaseInvoicesStorage.getAll(),
+        SupabaseSuppliersStorage.getAll(),
+        SupabaseItemsStorage.getAll()
+      ]);
+      setInvoices(invoicesData);
+      setSuppliers(suppliersData);
+      setItems(itemsData);
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  };
 
-  // حفظ تلقائي عند تغيير الفواتير
   useEffect(() => {
-    if (invoices.length > 0) {
-      InvoicesStorage.save(invoices);
-    }
-  }, [invoices]);
+    loadData();
+
+    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe((newInvoices) => {
+      setInvoices(newInvoices);
+    });
+
+    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
+      setSuppliers(newSuppliers);
+    });
+
+    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
+      setItems(newItems);
+    });
+
+    return () => {
+      unsubscribeInvoices();
+      unsubscribeSuppliers();
+      unsubscribeItems();
+    };
+  }, []);
 
   const filteredInvoices = invoices.filter(invoice =>
     invoice?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -69,22 +91,19 @@ export default function Invoices() {
 
   const getSupplierName = (supplierId: string) => {
     if (!supplierId) return 'غير محدد';
-    const storedSuppliers = SuppliersStorage.getAll();
-    const allSuppliers = storedSuppliers.length > 0 ? storedSuppliers : mockSuppliers;
-    const supplier = allSuppliers.find(s => s?.id === supplierId);
+    const supplier = suppliers.find(s => s?.id === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
   const getItemName = (itemId: string) => {
     if (!itemId) return 'غير محدد';
-    const storedItems = ItemsStorage.getAll();
-    const allItems = storedItems.length > 0 ? storedItems : mockItems;
-    const item = allItems.find(i => i?.id === itemId);
+    const item = items.find(i => i?.id === itemId);
     return item?.name || 'غير محدد';
   };
 
   const getStatusBadge = (status: Invoice['status']) => {
     const statusConfig = {
+      draft: { label: 'مسودة', variant: 'secondary' as const, color: 'text-gray-600' },
       pending: { label: 'معلق', variant: 'outline' as const, color: 'text-yellow-600' },
       paid: { label: 'مدفوع', variant: 'outline' as const, color: 'text-green-600' },
       overdue: { label: 'متأخر', variant: 'outline' as const, color: 'text-red-600' },
@@ -106,6 +125,7 @@ export default function Invoices() {
     setFormData({
       invoiceNumber: '',
       supplierId: '',
+      issueDate: '',
       dueDate: '',
       status: '',
       notes: ''
@@ -118,12 +138,13 @@ export default function Invoices() {
     });
   };
 
-  const handleAddInvoice = () => {
+  const handleAddInvoice = async () => {
     setEditingInvoice(null);
     resetForm();
+    const invoiceNumber = await generateInvoiceNumber();
     setFormData(prev => ({
       ...prev,
-      invoiceNumber: AutoNumberGenerator.generateInvoiceNumber()
+      invoiceNumber
     }));
     setIsDialogOpen(true);
   };
@@ -133,8 +154,9 @@ export default function Invoices() {
     setFormData({
       invoiceNumber: invoice?.invoiceNumber || '',
       supplierId: invoice?.supplierId || '',
-      dueDate: invoice?.dueDate ? invoice.dueDate.toISOString().split('T')[0] : '',
-      status: invoice?.status || 'pending',
+      issueDate: invoice?.issueDate ? new Date(invoice.issueDate).toISOString().split('T')[0] : '',
+      dueDate: invoice?.dueDate ? new Date(invoice.dueDate).toISOString().split('T')[0] : '',
+      status: invoice?.status || 'draft',
       notes: invoice?.notes || ''
     });
     setInvoiceItems(invoice?.items || []);
@@ -165,51 +187,64 @@ export default function Invoices() {
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
   };
 
-  const handleSaveInvoice = () => {
+  const handleSaveInvoice = async () => {
     if (!formData.supplierId || !formData.dueDate || !formData.status || invoiceItems.length === 0) {
       alert('يرجى ملء جميع الحقول المطلوبة وإضافة صنف واحد على الأقل');
       return;
     }
 
-    const newInvoice: Invoice = {
-      id: editingInvoice?.id || Date.now().toString(),
-      invoiceNumber: formData.invoiceNumber,
-      supplierId: formData.supplierId,
-      items: invoiceItems,
-      totalAmount: calculateTotal(invoiceItems),
-      dueDate: new Date(formData.dueDate),
-      status: formData.status as Invoice['status'],
-      notes: formData.notes,
-      createdAt: editingInvoice?.createdAt || new Date()
-    };
+    try {
+      const invoiceData = {
+        invoiceNumber: formData.invoiceNumber,
+        supplierId: formData.supplierId,
+        items: invoiceItems,
+        totalAmount: calculateTotal(invoiceItems),
+        issueDate: formData.issueDate || new Date().toISOString(),
+        dueDate: formData.dueDate,
+        status: formData.status as Invoice['status'],
+        notes: formData.notes
+      };
 
-    if (editingInvoice) {
-      // تحديث الفاتورة الموجودة
-      const updatedInvoices = invoices.map(invoice => 
-        invoice?.id === editingInvoice.id ? newInvoice : invoice
-      );
-      setInvoices(updatedInvoices);
-    } else {
-      // إضافة فاتورة جديدة
-      setInvoices([...invoices, newInvoice]);
+      if (editingInvoice) {
+        await SupabaseInvoicesStorage.update(editingInvoice.id, invoiceData);
+      } else {
+        await SupabaseInvoicesStorage.add(invoiceData);
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('خطأ في حفظ الفاتورة:', error);
+      alert('حدث خطأ أثناء حفظ الفاتورة');
     }
-
-    setIsDialogOpen(false);
-    resetForm();
   };
 
-  const handleDeleteInvoice = (invoiceId: string) => {
+  const handleDeleteInvoice = async (invoiceId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) {
-      const updatedInvoices = invoices.filter(invoice => invoice?.id !== invoiceId);
-      setInvoices(updatedInvoices);
+      try {
+        await SupabaseInvoicesStorage.delete(invoiceId);
+      } catch (error) {
+        console.error('خطأ في حذف الفاتورة:', error);
+        alert('حدث خطأ أثناء حذف الفاتورة');
+      }
     }
   };
 
   const totalInvoices = invoices.length;
   const pendingInvoices = invoices.filter(i => i?.status === 'pending').length;
-  const paidInvoices = invoices.filter(i => i?.status === 'paid').length;
   const overdueInvoices = invoices.filter(i => i?.status === 'overdue').length;
   const totalAmount = invoices.reduce((sum, invoice) => sum + (invoice?.totalAmount || 0), 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -224,7 +259,6 @@ export default function Invoices() {
         </Button>
       </div>
 
-      {/* إحصائيات سريعة */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -271,7 +305,6 @@ export default function Invoices() {
         </Card>
       </div>
 
-      {/* شريط البحث والفلاتر */}
       <Card>
         <CardHeader>
           <CardTitle>البحث والفلتر</CardTitle>
@@ -287,22 +320,10 @@ export default function Invoices() {
                 className="pr-10"
               />
             </div>
-            <Select>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="فلتر حسب الحالة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع الحالات</SelectItem>
-                <SelectItem value="pending">معلق</SelectItem>
-                <SelectItem value="paid">مدفوع</SelectItem>
-                <SelectItem value="overdue">متأخر</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* جدول الفواتير */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -332,7 +353,7 @@ export default function Invoices() {
                   <TableCell>
                     <div className="flex items-center">
                       <Calendar className="h-3 w-3 ml-1" />
-                      {invoice?.dueDate ? invoice.dueDate.toLocaleDateString('ar-SA') : 'غير محدد'}
+                      {invoice?.dueDate ? new Date(invoice.dueDate).toLocaleDateString('ar-SA') : 'غير محدد'}
                     </div>
                   </TableCell>
                   <TableCell>{safeToLocaleString(invoice?.totalAmount)} ريال</TableCell>
@@ -364,7 +385,6 @@ export default function Invoices() {
         </CardContent>
       </Card>
 
-      {/* نافذة إضافة/تعديل الفاتورة */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -376,7 +396,6 @@ export default function Invoices() {
             </DialogDescription>
           </DialogHeader>
           
-          {/* بيانات الفاتورة الأساسية */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="space-y-2">
               <Label htmlFor="invoiceNumber">رقم الفاتورة</Label>
@@ -394,7 +413,7 @@ export default function Invoices() {
                   <SelectValue placeholder="اختر المورد" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(SuppliersStorage.getAll().length > 0 ? SuppliersStorage.getAll() : mockSuppliers).map((supplier) => (
+                  {suppliers.map((supplier) => (
                     <SelectItem key={supplier?.id} value={supplier?.id || ''}>
                       {supplier?.name || 'غير محدد'}
                     </SelectItem>
@@ -418,6 +437,7 @@ export default function Invoices() {
                   <SelectValue placeholder="اختر الحالة" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="draft">مسودة</SelectItem>
                   <SelectItem value="pending">معلق</SelectItem>
                   <SelectItem value="paid">مدفوع</SelectItem>
                   <SelectItem value="overdue">متأخر</SelectItem>
@@ -426,11 +446,9 @@ export default function Invoices() {
             </div>
           </div>
 
-          {/* إضافة الأصناف */}
           <div className="border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold mb-4">أصناف الفاتورة</h3>
             
-            {/* نموذج إضافة صنف جديد */}
             <div className="grid grid-cols-4 gap-4 mb-4">
               <div className="space-y-2">
                 <Label>الصنف</Label>
@@ -439,7 +457,7 @@ export default function Invoices() {
                     <SelectValue placeholder="اختر الصنف" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(ItemsStorage.getAll().length > 0 ? ItemsStorage.getAll() : mockItems).map((item) => (
+                    {items.map((item) => (
                       <SelectItem key={item?.id} value={item?.id || ''}>
                         {item?.name || 'غير محدد'}
                       </SelectItem>
@@ -473,7 +491,6 @@ export default function Invoices() {
               </div>
             </div>
 
-            {/* قائمة الأصناف المضافة */}
             {invoiceItems.length > 0 && (
               <Table>
                 <TableHeader>
@@ -514,7 +531,6 @@ export default function Invoices() {
             )}
           </div>
 
-          {/* ملاحظات */}
           <div className="space-y-2 mb-4">
             <Label htmlFor="notes">ملاحظات</Label>
             <Input 

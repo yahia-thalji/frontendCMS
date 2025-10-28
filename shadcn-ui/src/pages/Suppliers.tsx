@@ -8,61 +8,75 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, Users, Phone, Mail, MapPin } from 'lucide-react';
-import { mockSuppliers } from '@/data/mockData';
 import { Supplier } from '@/types';
-import { AutoNumberGenerator } from '@/lib/autoNumber';
-import { SuppliersStorage } from '@/lib/localStorage';
+import { generateSupplierNumber } from '@/lib/autoNumber';
+import { SupabaseSuppliersStorage } from '@/lib/supabaseStorage';
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // حالات النموذج
   const [formData, setFormData] = useState({
     supplierNumber: '',
     name: '',
-    phone: '',
+    contactPerson: '',
     email: '',
+    phone: '',
     address: '',
-    paymentTerms: ''
+    country: ''
   });
 
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    const storedSuppliers = SuppliersStorage.getAll();
-    if (storedSuppliers.length > 0) {
-      setSuppliers(storedSuppliers);
-    } else {
-      // إذا لم توجد بيانات محفوظة، استخدم البيانات الوهمية وحفظها
-      setSuppliers(mockSuppliers);
-      SuppliersStorage.save(mockSuppliers);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await SupabaseSuppliersStorage.getAll();
+      setSuppliers(data);
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    const unsubscribe = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
+      setSuppliers(newSuppliers);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const filteredSuppliers = suppliers.filter(supplier =>
-    supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    supplier.email.toLowerCase().includes(searchTerm.toLowerCase())
+    supplier?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    supplier?.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const resetForm = () => {
     setFormData({
       supplierNumber: '',
       name: '',
-      phone: '',
+      contactPerson: '',
       email: '',
+      phone: '',
       address: '',
-      paymentTerms: ''
+      country: ''
     });
   };
 
-  const handleAddSupplier = () => {
+  const handleAddSupplier = async () => {
     setEditingSupplier(null);
     resetForm();
+    const supplierNumber = await generateSupplierNumber();
     setFormData(prev => ({
       ...prev,
-      supplierNumber: AutoNumberGenerator.generateSupplierNumber()
+      supplierNumber
     }));
     setIsDialogOpen(true);
   };
@@ -70,55 +84,69 @@ export default function Suppliers() {
   const handleEditSupplier = (supplier: Supplier) => {
     setEditingSupplier(supplier);
     setFormData({
-      supplierNumber: `SUP-2024-${supplier.id.padStart(4, '0')}`,
-      name: supplier.name,
-      phone: supplier.phone,
-      email: supplier.email,
-      address: supplier.address,
-      paymentTerms: supplier.paymentTerms
+      supplierNumber: supplier?.supplierNumber || '',
+      name: supplier?.name || '',
+      contactPerson: supplier?.contactPerson || '',
+      email: supplier?.email || '',
+      phone: supplier?.phone || '',
+      address: supplier?.address || '',
+      country: supplier?.country || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleSaveSupplier = () => {
+  const handleSaveSupplier = async () => {
     if (!formData.name || !formData.phone || !formData.email) {
       alert('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    const newSupplier: Supplier = {
-      id: editingSupplier?.id || Date.now().toString(),
-      name: formData.name,
-      phone: formData.phone,
-      email: formData.email,
-      address: formData.address,
-      paymentTerms: formData.paymentTerms,
-      createdAt: editingSupplier?.createdAt || new Date()
-    };
+    try {
+      const supplierData = {
+        supplierNumber: formData.supplierNumber,
+        name: formData.name,
+        contactPerson: formData.contactPerson,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        country: formData.country
+      };
 
-    if (editingSupplier) {
-      // تحديث المورد الموجود
-      SuppliersStorage.update(editingSupplier.id, newSupplier);
-      const updatedSuppliers = suppliers.map(supplier => 
-        supplier.id === editingSupplier.id ? newSupplier : supplier
-      );
-      setSuppliers(updatedSuppliers);
-    } else {
-      // إضافة مورد جديد
-      SuppliersStorage.add(newSupplier);
-      setSuppliers([...suppliers, newSupplier]);
+      if (editingSupplier) {
+        await SupabaseSuppliersStorage.update(editingSupplier.id, supplierData);
+      } else {
+        await SupabaseSuppliersStorage.add(supplierData);
+      }
+
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error('خطأ في حفظ المورد:', error);
+      alert('حدث خطأ أثناء حفظ المورد');
     }
-
-    setIsDialogOpen(false);
-    resetForm();
   };
 
-  const handleDeleteSupplier = (supplierId: string) => {
+  const handleDeleteSupplier = async (supplierId: string) => {
     if (confirm('هل أنت متأكد من حذف هذا المورد؟')) {
-      SuppliersStorage.delete(supplierId);
-      setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
+      try {
+        await SupabaseSuppliersStorage.delete(supplierId);
+      } catch (error) {
+        console.error('خطأ في حذف المورد:', error);
+        alert('حدث خطأ أثناء حذف المورد');
+      }
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري تحميل البيانات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -133,7 +161,6 @@ export default function Suppliers() {
         </Button>
       </div>
 
-      {/* إحصائيات سريعة */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -145,37 +172,8 @@ export default function Suppliers() {
             <p className="text-xs text-gray-600">مورد نشط</p>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">الموردين الجدد</CardTitle>
-            <Users className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {suppliers.filter(s => {
-                const monthAgo = new Date();
-                monthAgo.setMonth(monthAgo.getMonth() - 1);
-                return s.createdAt >= monthAgo;
-              }).length}
-            </div>
-            <p className="text-xs text-gray-600">هذا الشهر</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">متوسط مدة الدفع</CardTitle>
-            <Users className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">37</div>
-            <p className="text-xs text-gray-600">يوم</p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* شريط البحث */}
       <Card>
         <CardHeader>
           <CardTitle>البحث والفلتر</CardTitle>
@@ -195,7 +193,6 @@ export default function Suppliers() {
         </CardContent>
       </Card>
 
-      {/* جدول الموردين */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -212,39 +209,35 @@ export default function Suppliers() {
                 <TableHead>اسم المورد</TableHead>
                 <TableHead>معلومات الاتصال</TableHead>
                 <TableHead>العنوان</TableHead>
-                <TableHead>شروط الدفع</TableHead>
-                <TableHead>تاريخ التسجيل</TableHead>
+                <TableHead>الدولة</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead>الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSuppliers.map((supplier) => (
-                <TableRow key={supplier.id}>
-                  <TableCell className="font-medium">SUP-2024-{supplier.id.padStart(4, '0')}</TableCell>
-                  <TableCell className="font-medium">{supplier.name}</TableCell>
+                <TableRow key={supplier?.id}>
+                  <TableCell className="font-medium">{supplier?.supplierNumber || 'غير محدد'}</TableCell>
+                  <TableCell className="font-medium">{supplier?.name || 'غير محدد'}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center text-sm">
                         <Phone className="h-3 w-3 ml-1" />
-                        {supplier.phone}
+                        {supplier?.phone || 'غير محدد'}
                       </div>
                       <div className="flex items-center text-sm">
                         <Mail className="h-3 w-3 ml-1" />
-                        {supplier.email}
+                        {supplier?.email || 'غير محدد'}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center text-sm">
                       <MapPin className="h-3 w-3 ml-1" />
-                      {supplier.address}
+                      {supplier?.address || 'غير محدد'}
                     </div>
                   </TableCell>
-                  <TableCell>{supplier.paymentTerms}</TableCell>
-                  <TableCell>
-                    {supplier.createdAt.toLocaleDateString('ar-SA')}
-                  </TableCell>
+                  <TableCell>{supplier?.country || 'غير محدد'}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-green-600">
                       نشط
@@ -262,7 +255,7 @@ export default function Suppliers() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteSupplier(supplier.id)}
+                        onClick={() => handleDeleteSupplier(supplier?.id || '')}
                         className="text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -276,7 +269,6 @@ export default function Suppliers() {
         </CardContent>
       </Card>
 
-      {/* نافذة إضافة/تعديل المورد */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -307,6 +299,15 @@ export default function Suppliers() {
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="contactPerson">الشخص المسؤول</Label>
+              <Input 
+                id="contactPerson" 
+                placeholder="أدخل اسم المسؤول"
+                value={formData.contactPerson}
+                onChange={(e) => setFormData(prev => ({...prev, contactPerson: e.target.value}))}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="phone">رقم الهاتف *</Label>
               <Input 
                 id="phone" 
@@ -326,12 +327,12 @@ export default function Suppliers() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="paymentTerms">شروط الدفع</Label>
+              <Label htmlFor="country">الدولة</Label>
               <Input 
-                id="paymentTerms" 
-                placeholder="مثال: 30 يوم"
-                value={formData.paymentTerms}
-                onChange={(e) => setFormData(prev => ({...prev, paymentTerms: e.target.value}))}
+                id="country" 
+                placeholder="أدخل الدولة"
+                value={formData.country}
+                onChange={(e) => setFormData(prev => ({...prev, country: e.target.value}))}
               />
             </div>
             <div className="col-span-2 space-y-2">
