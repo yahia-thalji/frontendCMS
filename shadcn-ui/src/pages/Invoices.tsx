@@ -44,6 +44,18 @@ export default function Invoices() {
     return value.toLocaleString('ar');
   };
 
+  const getSupplierName = (supplierId: string) => {
+    if (!supplierId) return 'غير محدد';
+    const supplier = suppliers.find(s => s?.id === supplierId);
+    return supplier?.name || 'غير محدد';
+  };
+
+  const getItemName = (itemId: string) => {
+    if (!itemId) return 'غير محدد';
+    const item = items.find(i => i?.id === itemId);
+    return item?.name || 'غير محدد';
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -88,18 +100,6 @@ export default function Invoices() {
     invoice?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     getSupplierName(invoice?.supplierId || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const getSupplierName = (supplierId: string) => {
-    if (!supplierId) return 'غير محدد';
-    const supplier = suppliers.find(s => s?.id === supplierId);
-    return supplier?.name || 'غير محدد';
-  };
-
-  const getItemName = (itemId: string) => {
-    if (!itemId) return 'غير محدد';
-    const item = items.find(i => i?.id === itemId);
-    return item?.name || 'غير محدد';
-  };
 
   const getStatusBadge = (status: Invoice['status']) => {
     const statusConfig = {
