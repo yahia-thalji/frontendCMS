@@ -10,8 +10,8 @@ export interface Item {
   locationId?: string;
   quantity: number;
   currencyId?: string;
-  createdAt: Date;
-  updatedAt?: Date;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Supplier {
@@ -21,8 +21,8 @@ export interface Supplier {
   phone: string;
   email: string;
   paymentTerms: string;
-  createdAt: Date;
-  updatedAt?: Date;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Currency {
@@ -32,8 +32,8 @@ export interface Currency {
   symbol: string;
   exchangeRate: number;
   isBaseCurrency: boolean;
-  createdAt: Date;
-  updatedAt?: Date;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface InvoiceItem {
@@ -54,8 +54,8 @@ export interface Invoice {
   status: 'pending' | 'paid' | 'cancelled';
   notes?: string;
   items: InvoiceItem[];
-  createdAt: Date;
-  updatedAt?: Date;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Location {
@@ -65,8 +65,8 @@ export interface Location {
   capacity: number;
   currentStock: number;
   description?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Shipment {
@@ -75,15 +75,15 @@ export interface Shipment {
   billOfLading: string;
   containerNumber: string;
   status: 'in_transit' | 'arrived' | 'customs' | 'delivered';
-  departureDate: Date;
-  arrivalDate?: Date | null;
+  departureDate: string;
+  arrivalDate?: string | null;
   shippingCost: number;
   customsFees: number;
   insurance?: number;
   currencyId?: string;
   items?: ShipmentItem[];
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ShipmentItem {
@@ -102,7 +102,7 @@ export interface CostDistribution {
 }
 
 export interface ReportData {
-  [key: string]: string | number | boolean | Date | ReportData | ReportData[];
+  [key: string]: string | number | boolean | ReportData | ReportData[];
 }
 
 export interface Report {
@@ -110,7 +110,7 @@ export interface Report {
   type: 'inventory' | 'supplier' | 'shipping' | 'cost_analysis';
   title: string;
   data: ReportData;
-  generatedAt: Date;
+  generatedAt: string;
 }
 
 export interface Notification {
@@ -119,7 +119,7 @@ export interface Notification {
   title: string;
   message: string;
   isRead: boolean;
-  createdAt: Date;
+  createdAt: string;
   priority: 'low' | 'medium' | 'high';
 }
 

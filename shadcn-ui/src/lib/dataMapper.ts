@@ -88,15 +88,26 @@ export function toCamelCase<T extends Record<string, unknown>>(obj: T): Record<s
   return result;
 }
 
-// تحويل التواريخ من string إلى Date objects
+// تحويل التواريخ من string إلى Date objects - لكن نبقيها كـ strings للعرض في React
 export function parseDates<T extends Record<string, unknown>>(obj: T, dateFields: string[] = ['createdAt', 'updatedAt', 'issueDate', 'dueDate', 'departureDate', 'arrivalDate']): T {
   if (!obj || typeof obj !== 'object') return obj;
   
   const result = { ...obj };
   
+  // نحول التواريخ إلى ISO strings بدلاً من Date objects
+  // لأن React لا يمكنه عرض Date objects مباشرة
   for (const field of dateFields) {
-    if (result[field] && typeof result[field] === 'string') {
-      result[field] = new Date(result[field] as string) as unknown as T[Extract<keyof T, string>];
+    if (result[field]) {
+      if (result[field] instanceof Date) {
+        // إذا كان Date object، نحوله إلى ISO string
+        result[field] = (result[field] as Date).toISOString().split('T')[0] as unknown as T[Extract<keyof T, string>];
+      } else if (typeof result[field] === 'string') {
+        // إذا كان string، نتأكد أنه بصيغة YYYY-MM-DD
+        const dateStr = result[field] as string;
+        if (dateStr.includes('T')) {
+          result[field] = dateStr.split('T')[0] as unknown as T[Extract<keyof T, string>];
+        }
+      }
     }
   }
   
