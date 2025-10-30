@@ -23,3 +23,7 @@ export const generateBillOfLading = async (): Promise<string> => {
 export const generateInvoiceNumber = async (): Promise<string> => {
   return await SupabaseCountersStorage.getNextNumber('invoices', 'INV-');
 };
+
+export const generateShipmentNumber = async (): Promise<string> => {
+  return await SupabaseCountersStorage.getNextNumber('shipments', 'SHIP-');
+};

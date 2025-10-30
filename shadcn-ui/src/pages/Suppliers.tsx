@@ -13,7 +13,11 @@ import { Supplier } from '@/types';
 import { generateSupplierNumber } from '@/lib/autoNumber';
 import { SupabaseSuppliersStorage } from '@/lib/supabaseStorage';
 
-export default function Suppliers() {
+interface SuppliersProps {
+  quickActionTrigger?: { action: string; timestamp: number } | null;
+}
+
+export default function Suppliers({ quickActionTrigger }: SuppliersProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -59,6 +63,13 @@ export default function Suppliers() {
       unsubscribe();
     };
   }, []);
+
+  // Handle quick action trigger
+  useEffect(() => {
+    if (quickActionTrigger?.action === 'add-supplier') {
+      handleAddSupplier();
+    }
+  }, [quickActionTrigger]);
 
   const filteredSuppliers = suppliers.filter(supplier =>
     supplier?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -15,7 +15,11 @@ import { Location } from '@/types';
 import { generateLocationNumber } from '@/lib/autoNumber';
 import { SupabaseLocationsStorage } from '@/lib/supabaseStorage';
 
-export default function Locations() {
+interface LocationsProps {
+  quickActionTrigger?: { action: string; timestamp: number } | null;
+}
+
+export default function Locations({ quickActionTrigger }: LocationsProps) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -60,6 +64,13 @@ export default function Locations() {
       unsubscribe();
     };
   }, []);
+
+  // Handle quick action trigger
+  useEffect(() => {
+    if (quickActionTrigger?.action === 'add-location') {
+      handleAddLocation();
+    }
+  }, [quickActionTrigger]);
 
   const filteredLocations = locations.filter(location =>
     location?.name?.toLowerCase().includes(searchTerm.toLowerCase())

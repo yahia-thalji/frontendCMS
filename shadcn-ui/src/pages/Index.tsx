@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import QuickActions from '@/components/QuickActions';
 import Dashboard from './Dashboard';
 import Items from './Items';
 import Suppliers from './Suppliers';
@@ -34,8 +35,27 @@ const menuItems = [
 export default function Index() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [quickActionTrigger, setQuickActionTrigger] = useState<{action: string, timestamp: number} | null>(null);
 
   const ActiveComponent = menuItems.find(item => item.id === activeTab)?.component || Dashboard;
+
+  const handleQuickAction = (action: string) => {
+    // Map actions to tabs and trigger the add dialog
+    const actionToTab: Record<string, string> = {
+      'add-supplier': 'suppliers',
+      'add-item': 'items',
+      'add-invoice': 'invoices',
+      'add-shipment': 'shipping',
+      'add-location': 'locations'
+    };
+
+    const targetTab = actionToTab[action];
+    if (targetTab) {
+      setActiveTab(targetTab);
+      // Trigger the action with a timestamp to force re-render
+      setQuickActionTrigger({ action, timestamp: Date.now() });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
@@ -61,13 +81,19 @@ export default function Index() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden md:block text-right">
-              <p className="text-sm font-medium text-slate-900">مرحباً بك</p>
-              <p className="text-xs text-slate-500">المسؤول</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-semibold">
-              م
+          
+          <div className="flex items-center gap-4">
+            {/* Quick Actions */}
+            <QuickActions onAction={handleQuickAction} />
+            
+            <div className="flex items-center gap-2">
+              <div className="hidden md:block text-right">
+                <p className="text-sm font-medium text-slate-900">مرحباً بك</p>
+                <p className="text-xs text-slate-500">المسؤول</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                م
+              </div>
             </div>
           </div>
         </div>
@@ -114,7 +140,7 @@ export default function Index() {
         {/* Main Content */}
         <main className="flex-1 p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
-            <ActiveComponent />
+            <ActiveComponent quickActionTrigger={quickActionTrigger} />
           </div>
         </main>
       </div>

@@ -14,7 +14,11 @@ import { Item, Supplier, Location } from '@/types';
 import { generateItemNumber } from '@/lib/autoNumber';
 import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
 
-export default function Items() {
+interface ItemsProps {
+  quickActionTrigger?: { action: string; timestamp: number } | null;
+}
+
+export default function Items({ quickActionTrigger }: ItemsProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -86,6 +90,13 @@ export default function Items() {
       unsubscribeLocations();
     };
   }, []);
+
+  // Handle quick action trigger
+  useEffect(() => {
+    if (quickActionTrigger?.action === 'add-item') {
+      handleAddItem();
+    }
+  }, [quickActionTrigger]);
 
   const filteredItems = items.filter(item =>
     item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
