@@ -9,7 +9,8 @@ import {
   Ship, 
   BarChart3,
   Menu,
-  X
+  X,
+  DollarSign
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,7 @@ import Invoices from './Invoices';
 import Locations from './Locations';
 import Shipping from './Shipping';
 import Reports from './Reports';
+import Currencies from './Currencies';
 
 const menuItems = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, component: Dashboard },
@@ -29,6 +31,7 @@ const menuItems = [
   { id: 'invoices', label: 'الفواتير', icon: FileText, component: Invoices },
   { id: 'locations', label: 'المواقع', icon: MapPin, component: Locations },
   { id: 'shipping', label: 'الشحن', icon: Ship, component: Shipping },
+  { id: 'currencies', label: 'العملات', icon: DollarSign, component: Currencies },
   { id: 'reports', label: 'التقارير', icon: BarChart3, component: Reports },
 ];
 
@@ -46,7 +49,8 @@ export default function Index() {
       'add-item': 'items',
       'add-invoice': 'invoices',
       'add-shipment': 'shipping',
-      'add-location': 'locations'
+      'add-location': 'locations',
+      'add-currency': 'currencies'
     };
 
     const targetTab = actionToTab[action];

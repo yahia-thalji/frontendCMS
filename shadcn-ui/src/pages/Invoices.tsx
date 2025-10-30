@@ -8,9 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Edit, Trash2, FileText, Calendar } from 'lucide-react';
-import { Invoice, Supplier, Item } from '@/types';
+import { Invoice, Supplier, Item, Currency } from '@/types';
 import { generateInvoiceNumber } from '@/lib/autoNumber';
-import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage } from '@/lib/supabaseStorage';
+import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage, SupabaseCurrenciesStorage } from '@/lib/supabaseStorage';
+import { toast } from 'sonner';
 
 interface InvoicesProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -20,6 +21,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -32,6 +34,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     quantity: '',
     unitPrice: '',
     totalAmount: '',
+    currencyId: '',
     date: new Date().toISOString().split('T')[0],
     status: 'pending' as Invoice['status']
   });
@@ -39,16 +42,19 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invoicesData, suppliersData, itemsData] = await Promise.all([
+      const [invoicesData, suppliersData, itemsData, currenciesData] = await Promise.all([
         SupabaseInvoicesStorage.getAll(),
         SupabaseSuppliersStorage.getAll(),
-        SupabaseItemsStorage.getAll()
+        SupabaseItemsStorage.getAll(),
+        SupabaseCurrenciesStorage.getAll()
       ]);
       setInvoices(invoicesData);
       setSuppliers(suppliersData);
       setItems(itemsData);
+      setCurrencies(currenciesData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
+      toast.error('حدث خطأ أثناء تحميل البيانات');
     } finally {
       setLoading(false);
     }
@@ -69,10 +75,15 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       setItems(newItems);
     });
 
+    const unsubscribeCurrencies = SupabaseCurrenciesStorage.subscribe((newCurrencies) => {
+      setCurrencies(newCurrencies);
+    });
+
     return () => {
       unsubscribeInvoices();
       unsubscribeSuppliers();
       unsubscribeItems();
+      unsubscribeCurrencies();
     };
   }, []);
 
@@ -99,7 +110,17 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     return item?.name || 'غير محدد';
   };
 
+  const getCurrencySymbol = (currencyId?: string) => {
+    if (!currencyId) {
+      const baseCurrency = currencies.find(c => c.isBaseCurrency);
+      return baseCurrency?.symbol || 'ر.س';
+    }
+    const currency = currencies.find(c => c?.id === currencyId);
+    return currency?.symbol || 'ر.س';
+  };
+
   const resetForm = () => {
+    const baseCurrency = currencies.find(c => c.isBaseCurrency);
     setFormData({
       invoiceNumber: '',
       supplierId: '',
@@ -107,6 +128,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       quantity: '',
       unitPrice: '',
       totalAmount: '',
+      currencyId: baseCurrency?.id || '',
       date: new Date().toISOString().split('T')[0],
       status: 'pending'
     });
@@ -132,6 +154,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       quantity: (invoice?.quantity || 0).toString(),
       unitPrice: (invoice?.unitPrice || 0).toString(),
       totalAmount: (invoice?.totalAmount || 0).toString(),
+      currencyId: invoice?.currencyId || '',
       date: invoice?.date || new Date().toISOString().split('T')[0],
       status: invoice?.status || 'pending'
     });
@@ -140,7 +163,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
 
   const handleSaveInvoice = async () => {
     if (!formData.supplierId || !formData.itemId || !formData.quantity || !formData.unitPrice) {
-      alert('يرجى ملء جميع الحقول المطلوبة');
+      toast.error('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
@@ -156,31 +179,39 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
         quantity,
         unitPrice,
         totalAmount,
+        currencyId: formData.currencyId || undefined,
         date: formData.date,
         status: formData.status
       };
 
       if (editingInvoice) {
         await SupabaseInvoicesStorage.update(editingInvoice.id, invoiceData);
+        toast.success('تم تحديث الفاتورة بنجاح');
       } else {
         await SupabaseInvoicesStorage.add(invoiceData);
+        toast.success('تم إضافة الفاتورة بنجاح');
       }
 
       setIsDialogOpen(false);
       resetForm();
     } catch (error) {
       console.error('خطأ في حفظ الفاتورة:', error);
-      alert('حدث خطأ أثناء حفظ الفاتورة');
+      toast.error('حدث خطأ أثناء حفظ الفاتورة');
     }
   };
 
   const handleDeleteInvoice = async (invoiceId: string) => {
     if (confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) {
       try {
-        await SupabaseInvoicesStorage.delete(invoiceId);
+        const result = await SupabaseInvoicesStorage.delete(invoiceId);
+        if (result.success) {
+          toast.success('تم حذف الفاتورة بنجاح');
+        } else {
+          toast.error(result.message);
+        }
       } catch (error) {
         console.error('خطأ في حذف الفاتورة:', error);
-        alert('حدث خطأ أثناء حذف الفاتورة');
+        toast.error('حدث خطأ أثناء حذف الفاتورة');
       }
     }
   };
@@ -280,8 +311,8 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                   <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
                   <TableCell>{getItemName(invoice?.itemId || '')}</TableCell>
                   <TableCell>{invoice?.quantity || 0}</TableCell>
-                  <TableCell>{(invoice?.unitPrice || 0).toLocaleString('ar')} ريال</TableCell>
-                  <TableCell className="font-semibold">{(invoice?.totalAmount || 0).toLocaleString('ar')} ريال</TableCell>
+                  <TableCell>{(invoice?.unitPrice || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}</TableCell>
+                  <TableCell className="font-semibold">{(invoice?.totalAmount || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}</TableCell>
                   <TableCell>
                     <div className="flex items-center text-sm">
                       <Calendar className="h-3 w-3 ml-1" />
@@ -385,6 +416,21 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="currency">العملة *</Label>
+              <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر العملة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currencies.map((currency) => (
+                    <SelectItem key={currency?.id} value={currency?.id || ''}>
+                      {currency?.name} ({currency?.symbol})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="unitPrice">سعر الوحدة *</Label>
               <Input 
                 id="unitPrice" 
@@ -398,12 +444,12 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
               <Label htmlFor="totalAmount">المبلغ الإجمالي</Label>
               <Input 
                 id="totalAmount" 
-                value={formData.totalAmount}
+                value={`${formData.totalAmount} ${getCurrencySymbol(formData.currencyId)}`}
                 disabled
                 className="bg-gray-50 font-semibold"
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 col-span-2">
               <Label htmlFor="status">الحالة *</Label>
               <Select value={formData.status} onValueChange={(value: Invoice['status']) => setFormData(prev => ({...prev, status: value}))}>
                 <SelectTrigger>

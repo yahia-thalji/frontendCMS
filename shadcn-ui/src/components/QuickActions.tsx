@@ -1,4 +1,4 @@
-import { Plus, FileText, Package, Ship, Users, MapPin } from 'lucide-react';
+import { Plus, FileText, Package, Ship, Users, MapPin, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -51,6 +51,11 @@ export default function QuickActions({ onAction }: QuickActionsProps) {
           <DropdownMenuItem onClick={() => onAction('add-location')} className="cursor-pointer">
             <MapPin className="h-4 w-4 ml-2" />
             <span>إضافة موقع تخزين</span>
+          </DropdownMenuItem>
+          
+          <DropdownMenuItem onClick={() => onAction('add-currency')} className="cursor-pointer">
+            <DollarSign className="h-4 w-4 ml-2" />
+            <span>إضافة عملة جديدة</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

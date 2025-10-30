@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Item, Supplier, Invoice, Location, Shipment } from '@/types';
+import { Item, Supplier, Invoice, Location, Shipment, Currency } from '@/types';
 import { toSnakeCase, toCamelCase, parseDates, mapLocationFields } from './dataMapper';
 import { 
   checkSupplierRelationships, 
@@ -265,4 +265,5 @@ export const SupabaseSuppliersStorage = new SupabaseStorage<Supplier>('app_d7698
 export const SupabaseInvoicesStorage = new SupabaseStorage<Invoice>('app_d7698bc563_invoices');
 export const SupabaseLocationsStorage = new SupabaseStorage<Location>('app_d7698bc563_locations');
 export const SupabaseShipmentsStorage = new SupabaseStorage<Shipment>('app_d7698bc563_shipments');
+export const SupabaseCurrenciesStorage = new SupabaseStorage<Currency>('app_d7698bc563_currencies');
 export const SupabaseCountersStorage = new CountersStorage('app_d7698bc563_auto_numbers');

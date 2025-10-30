@@ -9,6 +9,7 @@ export interface Item {
   supplierId: string;
   locationId?: string;
   quantity: number;
+  currencyId?: string;
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -24,21 +25,28 @@ export interface Supplier {
   updatedAt?: Date;
 }
 
+export interface Currency {
+  id: string;
+  name: string;
+  code: string;
+  symbol: string;
+  exchangeRate: number;
+  isBaseCurrency: boolean;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
   supplierId: string;
-  items: InvoiceItem[];
+  itemId: string;
+  quantity: number;
+  unitPrice: number;
   totalAmount: number;
-  subtotal?: number;
-  shippingCost?: number;
-  customsFees?: number;
-  insurance?: number;
-  total?: number;
-  status: 'draft' | 'pending' | 'paid' | 'overdue';
-  issueDate?: Date;
-  dueDate: Date;
-  notes?: string;
+  currencyId?: string;
+  date: string;
+  status: 'pending' | 'paid' | 'cancelled';
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -72,6 +80,7 @@ export interface Shipment {
   shippingCost: number;
   customsFees: number;
   insurance?: number;
+  currencyId?: string;
   items?: ShipmentItem[];
   createdAt?: Date;
   updatedAt?: Date;
