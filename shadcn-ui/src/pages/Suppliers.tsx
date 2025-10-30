@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Edit, Trash2, Users, Phone, Mail, MapPin } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Plus, Search, Edit, Trash2, Users, Phone, Mail, MapPin, AlertTriangle } from 'lucide-react';
 import { Supplier } from '@/types';
 import { generateSupplierNumber } from '@/lib/autoNumber';
 import { SupabaseSuppliersStorage } from '@/lib/supabaseStorage';
@@ -18,6 +19,12 @@ export default function Suppliers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<{
+    message: string;
+    relatedEntities?: Array<{ type: string; count: number; items: string[] }>;
+  } | null>(null);
 
   const [formData, setFormData] = useState({
     supplierNumber: '',
@@ -127,13 +134,32 @@ export default function Suppliers() {
   };
 
   const handleDeleteSupplier = async (supplierId: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا المورد؟')) {
-      try {
-        await SupabaseSuppliersStorage.delete(supplierId);
-      } catch (error) {
-        console.error('خطأ في حذف المورد:', error);
-        alert('حدث خطأ أثناء حذف المورد');
+    setSupplierToDelete(supplierId);
+    setDeleteError(null);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!supplierToDelete) return;
+
+    try {
+      const result = await SupabaseSuppliersStorage.delete(supplierToDelete);
+      
+      if (result.success) {
+        setDeleteDialogOpen(false);
+        setSupplierToDelete(null);
+        setDeleteError(null);
+      } else {
+        setDeleteError({
+          message: result.message,
+          relatedEntities: result.relatedEntities
+        });
       }
+    } catch (error) {
+      console.error('خطأ في حذف المورد:', error);
+      setDeleteError({
+        message: 'حدث خطأ أثناء حذف المورد'
+      });
     }
   };
 
@@ -352,6 +378,70 @@ export default function Suppliers() {
             <Button onClick={handleSaveSupplier}>
               {editingSupplier ? 'حفظ التعديل' : 'إضافة المورد'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-red-600">
+              <AlertTriangle className="h-5 w-5 ml-2" />
+              تأكيد الحذف
+            </DialogTitle>
+            <DialogDescription>
+              هل أنت متأكد من حذف هذا المورد؟
+            </DialogDescription>
+          </DialogHeader>
+          
+          {deleteError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>لا يمكن الحذف</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">{deleteError.message}</p>
+                {deleteError.relatedEntities && deleteError.relatedEntities.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {deleteError.relatedEntities.map((entity, index) => (
+                      <div key={index} className="bg-red-50 p-3 rounded">
+                        <p className="font-semibold text-sm mb-1">
+                          {entity.type} ({entity.count})
+                        </p>
+                        <ul className="text-xs space-y-1">
+                          {entity.items.map((item, idx) => (
+                            <li key={idx}>• {item}</li>
+                          ))}
+                          {entity.count > 5 && (
+                            <li className="text-gray-600">... و {entity.count - 5} أخرى</li>
+                          )}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setDeleteError(null);
+                setSupplierToDelete(null);
+              }}
+            >
+              إلغاء
+            </Button>
+            {!deleteError && (
+              <Button 
+                variant="destructive" 
+                onClick={confirmDelete}
+              >
+                تأكيد الحذف
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

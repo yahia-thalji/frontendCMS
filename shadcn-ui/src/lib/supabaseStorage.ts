@@ -1,6 +1,14 @@
 import { supabase } from './supabase';
 import { Item, Supplier, Invoice, Location, Shipment } from '@/types';
 import { toSnakeCase, toCamelCase, parseDates, mapLocationFields } from './dataMapper';
+import { 
+  checkSupplierRelationships, 
+  checkItemRelationships, 
+  checkLocationRelationships,
+  checkInvoiceRelationships,
+  checkShipmentRelationships,
+  RelationshipCheck 
+} from './relationshipChecker';
 
 type SubscriptionCallback<T> = (data: T[]) => void;
 type UnsubscribeFunction = () => void;
@@ -133,8 +141,43 @@ class SupabaseStorage<T extends { id?: string }> {
     }
   }
 
-  async delete(id: string): Promise<boolean> {
+  /**
+   * فحص العلاقات قبل الحذف
+   */
+  async checkRelationships(id: string): Promise<RelationshipCheck> {
+    if (this.tableName.includes('suppliers')) {
+      return await checkSupplierRelationships(id);
+    } else if (this.tableName.includes('items')) {
+      return await checkItemRelationships(id);
+    } else if (this.tableName.includes('locations')) {
+      return await checkLocationRelationships(id);
+    } else if (this.tableName.includes('invoices')) {
+      return await checkInvoiceRelationships(id);
+    } else if (this.tableName.includes('shipments')) {
+      return await checkShipmentRelationships(id);
+    }
+    
+    return {
+      canDelete: true,
+      relatedEntities: [],
+      message: 'يمكن الحذف'
+    };
+  }
+
+  async delete(id: string): Promise<{ success: boolean; message: string; relatedEntities?: RelationshipCheck['relatedEntities'] }> {
     try {
+      // فحص العلاقات أولاً
+      const relationshipCheck = await this.checkRelationships(id);
+      
+      if (!relationshipCheck.canDelete) {
+        return {
+          success: false,
+          message: relationshipCheck.message,
+          relatedEntities: relationshipCheck.relatedEntities
+        };
+      }
+      
+      // إذا كان يمكن الحذف، قم بالحذف
       const { error } = await supabase
         .from(this.tableName)
         .delete()
@@ -142,10 +185,16 @@ class SupabaseStorage<T extends { id?: string }> {
 
       if (error) throw error;
       await this.notifySubscribers();
-      return true;
+      return {
+        success: true,
+        message: 'تم الحذف بنجاح'
+      };
     } catch (error) {
       console.error(`Error deleting ${this.tableName}:`, error);
-      return false;
+      return {
+        success: false,
+        message: 'حدث خطأ أثناء الحذف'
+      };
     }
   }
 
