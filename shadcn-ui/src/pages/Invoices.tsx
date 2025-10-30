@@ -7,8 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Edit, Trash2, FileText, Calendar } from 'lucide-react';
-import { Invoice, Supplier, Item, Currency } from '@/types';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Search, Edit, Trash2, FileText, Calendar, X } from 'lucide-react';
+import { Invoice, InvoiceItem, Supplier, Item, Currency } from '@/types';
 import { generateInvoiceNumber } from '@/lib/autoNumber';
 import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage, SupabaseCurrenciesStorage } from '@/lib/supabaseStorage';
 import { toast } from 'sonner';
@@ -30,13 +31,18 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     supplierId: '',
+    issueDate: new Date().toISOString().split('T')[0],
+    dueDate: '',
+    currencyId: '',
+    status: 'pending' as Invoice['status'],
+    notes: '',
+    items: [] as InvoiceItem[]
+  });
+
+  const [currentItem, setCurrentItem] = useState({
     itemId: '',
     quantity: '',
-    unitPrice: '',
-    totalAmount: '',
-    currencyId: '',
-    date: new Date().toISOString().split('T')[0],
-    status: 'pending' as Invoice['status']
+    unitPrice: ''
   });
 
   const loadData = async () => {
@@ -87,7 +93,6 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     };
   }, []);
 
-  // Handle quick action trigger
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-invoice') {
       handleAddInvoice();
@@ -121,17 +126,21 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
 
   const resetForm = () => {
     const baseCurrency = currencies.find(c => c.isBaseCurrency);
+    const today = new Date().toISOString().split('T')[0];
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    
     setFormData({
       invoiceNumber: '',
       supplierId: '',
-      itemId: '',
-      quantity: '',
-      unitPrice: '',
-      totalAmount: '',
+      issueDate: today,
+      dueDate: nextMonth.toISOString().split('T')[0],
       currencyId: baseCurrency?.id || '',
-      date: new Date().toISOString().split('T')[0],
-      status: 'pending'
+      status: 'pending',
+      notes: '',
+      items: []
     });
+    setCurrentItem({ itemId: '', quantity: '', unitPrice: '' });
   };
 
   const handleAddInvoice = async () => {
@@ -150,38 +159,78 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     setFormData({
       invoiceNumber: invoice?.invoiceNumber || '',
       supplierId: invoice?.supplierId || '',
-      itemId: invoice?.itemId || '',
-      quantity: (invoice?.quantity || 0).toString(),
-      unitPrice: (invoice?.unitPrice || 0).toString(),
-      totalAmount: (invoice?.totalAmount || 0).toString(),
+      issueDate: invoice?.issueDate || new Date().toISOString().split('T')[0],
+      dueDate: invoice?.dueDate || '',
       currencyId: invoice?.currencyId || '',
-      date: invoice?.date || new Date().toISOString().split('T')[0],
-      status: invoice?.status || 'pending'
+      status: invoice?.status || 'pending',
+      notes: invoice?.notes || '',
+      items: invoice?.items || []
     });
     setIsDialogOpen(true);
   };
 
+  const handleAddItemToInvoice = () => {
+    if (!currentItem.itemId || !currentItem.quantity || !currentItem.unitPrice) {
+      toast.error('يرجى ملء جميع حقول الصنف');
+      return;
+    }
+
+    const quantity = parseInt(currentItem.quantity);
+    const unitPrice = parseFloat(currentItem.unitPrice);
+    const total = quantity * unitPrice;
+
+    const newItem: InvoiceItem = {
+      itemId: currentItem.itemId,
+      quantity,
+      unitPrice,
+      total
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, newItem]
+    }));
+
+    setCurrentItem({ itemId: '', quantity: '', unitPrice: '' });
+    toast.success('تم إضافة الصنف إلى الفاتورة');
+  };
+
+  const handleRemoveItemFromInvoice = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+    toast.success('تم حذف الصنف من الفاتورة');
+  };
+
+  const calculateTotalAmount = () => {
+    return formData.items.reduce((sum, item) => sum + item.total, 0);
+  };
+
   const handleSaveInvoice = async () => {
-    if (!formData.supplierId || !formData.itemId || !formData.quantity || !formData.unitPrice) {
+    if (!formData.supplierId || !formData.issueDate || !formData.dueDate) {
       toast.error('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
+    if (formData.items.length === 0) {
+      toast.error('يرجى إضافة صنف واحد على الأقل');
+      return;
+    }
+
     try {
-      const quantity = parseInt(formData.quantity) || 0;
-      const unitPrice = parseFloat(formData.unitPrice) || 0;
-      const totalAmount = quantity * unitPrice;
+      const totalAmount = calculateTotalAmount();
 
       const invoiceData = {
         invoiceNumber: formData.invoiceNumber,
         supplierId: formData.supplierId,
-        itemId: formData.itemId,
-        quantity,
-        unitPrice,
+        issueDate: formData.issueDate,
+        dueDate: formData.dueDate,
         totalAmount,
         currencyId: formData.currencyId || undefined,
-        date: formData.date,
-        status: formData.status
+        status: formData.status,
+        notes: formData.notes || undefined,
+        items: formData.items
       };
 
       if (editingInvoice) {
@@ -225,18 +274,6 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     const config = statusConfig[status] || statusConfig.pending;
     return <Badge className={config.className}>{config.label}</Badge>;
   };
-
-  useEffect(() => {
-    if (formData.quantity && formData.unitPrice) {
-      const quantity = parseInt(formData.quantity) || 0;
-      const unitPrice = parseFloat(formData.unitPrice) || 0;
-      const total = quantity * unitPrice;
-      setFormData(prev => ({
-        ...prev,
-        totalAmount: total.toString()
-      }));
-    }
-  }, [formData.quantity, formData.unitPrice]);
 
   if (loading) {
     return (
@@ -295,11 +332,10 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
               <TableRow>
                 <TableHead>رقم الفاتورة</TableHead>
                 <TableHead>المورد</TableHead>
-                <TableHead>الصنف</TableHead>
-                <TableHead>الكمية</TableHead>
-                <TableHead>سعر الوحدة</TableHead>
+                <TableHead>عدد الأصناف</TableHead>
                 <TableHead>المبلغ الإجمالي</TableHead>
-                <TableHead>التاريخ</TableHead>
+                <TableHead>تاريخ الإصدار</TableHead>
+                <TableHead>تاريخ الاستحقاق</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead>الإجراءات</TableHead>
               </TableRow>
@@ -309,14 +345,20 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                 <TableRow key={invoice?.id}>
                   <TableCell className="font-medium">{invoice?.invoiceNumber || 'غير محدد'}</TableCell>
                   <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
-                  <TableCell>{getItemName(invoice?.itemId || '')}</TableCell>
-                  <TableCell>{invoice?.quantity || 0}</TableCell>
-                  <TableCell>{(invoice?.unitPrice || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}</TableCell>
-                  <TableCell className="font-semibold">{(invoice?.totalAmount || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}</TableCell>
+                  <TableCell>{invoice?.items?.length || 0} صنف</TableCell>
+                  <TableCell className="font-semibold">
+                    {(invoice?.totalAmount || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center text-sm">
                       <Calendar className="h-3 w-3 ml-1" />
-                      {invoice?.date || 'غير محدد'}
+                      {invoice?.issueDate || 'غير محدد'}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center text-sm">
+                      <Calendar className="h-3 w-3 ml-1" />
+                      {invoice?.dueDate || 'غير محدد'}
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(invoice?.status || 'pending')}</TableCell>
@@ -347,7 +389,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingInvoice ? 'تعديل الفاتورة' : 'إضافة فاتورة جديدة'}
@@ -356,114 +398,186 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
               {editingInvoice ? 'تعديل بيانات الفاتورة المحددة' : 'إضافة فاتورة جديدة إلى النظام'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="space-y-6">
+            {/* معلومات الفاتورة الأساسية */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="invoiceNumber">رقم الفاتورة</Label>
+                <Input 
+                  id="invoiceNumber" 
+                  value={formData.invoiceNumber}
+                  disabled
+                  className="bg-gray-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="supplier">المورد *</Label>
+                <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر المورد" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier?.id} value={supplier?.id || ''}>
+                        {supplier?.name || 'غير محدد'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="issueDate">تاريخ الإصدار *</Label>
+                <Input 
+                  id="issueDate" 
+                  type="date"
+                  value={formData.issueDate}
+                  onChange={(e) => setFormData(prev => ({...prev, issueDate: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate">تاريخ الاستحقاق *</Label>
+                <Input 
+                  id="dueDate" 
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData(prev => ({...prev, dueDate: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency">العملة *</Label>
+                <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر العملة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencies.map((currency) => (
+                      <SelectItem key={currency?.id} value={currency?.id || ''}>
+                        {currency?.name} ({currency?.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status">الحالة *</Label>
+                <Select value={formData.status} onValueChange={(value: Invoice['status']) => setFormData(prev => ({...prev, status: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الحالة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">قيد الانتظار</SelectItem>
+                    <SelectItem value="paid">مدفوعة</SelectItem>
+                    <SelectItem value="cancelled">ملغاة</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="invoiceNumber">رقم الفاتورة</Label>
-              <Input 
-                id="invoiceNumber" 
-                value={formData.invoiceNumber}
-                disabled
-                className="bg-gray-50"
+              <Label htmlFor="notes">الملاحظات</Label>
+              <Textarea 
+                id="notes"
+                placeholder="أدخل أي ملاحظات إضافية..."
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({...prev, notes: e.target.value}))}
+                rows={3}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="date">التاريخ *</Label>
-              <Input 
-                id="date" 
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData(prev => ({...prev, date: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="supplier">المورد *</Label>
-              <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر المورد" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier?.id} value={supplier?.id || ''}>
-                      {supplier?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="item">الصنف *</Label>
-              <Select value={formData.itemId} onValueChange={(value) => setFormData(prev => ({...prev, itemId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الصنف" />
-                </SelectTrigger>
-                <SelectContent>
-                  {items.map((item) => (
-                    <SelectItem key={item?.id} value={item?.id || ''}>
-                      {item?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="quantity">الكمية *</Label>
-              <Input 
-                id="quantity" 
-                type="number"
-                placeholder="أدخل الكمية"
-                value={formData.quantity}
-                onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="currency">العملة *</Label>
-              <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر العملة" />
-                </SelectTrigger>
-                <SelectContent>
-                  {currencies.map((currency) => (
-                    <SelectItem key={currency?.id} value={currency?.id || ''}>
-                      {currency?.name} ({currency?.symbol})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="unitPrice">سعر الوحدة *</Label>
-              <Input 
-                id="unitPrice" 
-                type="number"
-                placeholder="أدخل سعر الوحدة"
-                value={formData.unitPrice}
-                onChange={(e) => setFormData(prev => ({...prev, unitPrice: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="totalAmount">المبلغ الإجمالي</Label>
-              <Input 
-                id="totalAmount" 
-                value={`${formData.totalAmount} ${getCurrencySymbol(formData.currencyId)}`}
-                disabled
-                className="bg-gray-50 font-semibold"
-              />
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="status">الحالة *</Label>
-              <Select value={formData.status} onValueChange={(value: Invoice['status']) => setFormData(prev => ({...prev, status: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الحالة" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">قيد الانتظار</SelectItem>
-                  <SelectItem value="paid">مدفوعة</SelectItem>
-                  <SelectItem value="cancelled">ملغاة</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* إضافة الأصناف */}
+            <div className="border-t pt-4">
+              <h3 className="text-lg font-semibold mb-4">الأصناف</h3>
+              
+              <div className="grid grid-cols-4 gap-4 mb-4">
+                <div className="space-y-2">
+                  <Label htmlFor="itemId">الصنف *</Label>
+                  <Select value={currentItem.itemId} onValueChange={(value) => setCurrentItem(prev => ({...prev, itemId: value}))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر الصنف" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {items.map((item) => (
+                        <SelectItem key={item?.id} value={item?.id || ''}>
+                          {item?.name || 'غير محدد'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">الكمية *</Label>
+                  <Input 
+                    id="quantity" 
+                    type="number"
+                    placeholder="الكمية"
+                    value={currentItem.quantity}
+                    onChange={(e) => setCurrentItem(prev => ({...prev, quantity: e.target.value}))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unitPrice">سعر الوحدة *</Label>
+                  <Input 
+                    id="unitPrice" 
+                    type="number"
+                    placeholder="السعر"
+                    value={currentItem.unitPrice}
+                    onChange={(e) => setCurrentItem(prev => ({...prev, unitPrice: e.target.value}))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>&nbsp;</Label>
+                  <Button onClick={handleAddItemToInvoice} className="w-full">
+                    <Plus className="h-4 w-4 ml-2" />
+                    إضافة
+                  </Button>
+                </div>
+              </div>
+
+              {/* قائمة الأصناف المضافة */}
+              {formData.items.length > 0 && (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>الصنف</TableHead>
+                        <TableHead>الكمية</TableHead>
+                        <TableHead>سعر الوحدة</TableHead>
+                        <TableHead>الإجمالي</TableHead>
+                        <TableHead>إجراء</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {formData.items.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{getItemName(item.itemId)}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>{item.unitPrice.toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
+                          <TableCell className="font-semibold">{item.total.toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveItemFromInvoice(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-gray-50 font-semibold">
+                        <TableCell colSpan={3} className="text-left">المبلغ الإجمالي:</TableCell>
+                        <TableCell colSpan={2}>{calculateTotalAmount().toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
+
+          <div className="flex justify-end space-x-2 space-x-reverse mt-6">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
             </Button>

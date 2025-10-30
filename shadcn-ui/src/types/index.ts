@@ -36,26 +36,26 @@ export interface Currency {
   updatedAt?: Date;
 }
 
-export interface Invoice {
-  id: string;
-  invoiceNumber: string;
-  supplierId: string;
-  itemId: string;
-  quantity: number;
-  unitPrice: number;
-  totalAmount: number;
-  currencyId?: string;
-  date: string;
-  status: 'pending' | 'paid' | 'cancelled';
-  createdAt: Date;
-  updatedAt?: Date;
-}
-
 export interface InvoiceItem {
   itemId: string;
   quantity: number;
   unitPrice: number;
-  total?: number;
+  total: number;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  supplierId: string;
+  issueDate: string;
+  dueDate: string;
+  totalAmount: number;
+  currencyId?: string;
+  status: 'pending' | 'paid' | 'cancelled';
+  notes?: string;
+  items: InvoiceItem[];
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Location {
