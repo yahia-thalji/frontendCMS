@@ -8,50 +8,65 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Edit, Trash2, Ship, Calendar, MapPin } from 'lucide-react';
-import { Shipment, Item, Location } from '@/types';
-import { generateShipmentNumber } from '@/lib/autoNumber';
-import { SupabaseShipmentsStorage, SupabaseItemsStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
+import { Plus, Search, Edit, Trash2, Ship, Calendar, Package, DollarSign, X } from 'lucide-react';
+import { Shipment, ShipmentItem, Item, Supplier, Currency } from '@/types';
+import { SupabaseShipmentsStorage, SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseCurrenciesStorage } from '@/lib/supabaseStorage';
+import { toast } from 'sonner';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ShippingProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
 }
 
 export default function Shipping({ quickActionTrigger }: ShippingProps) {
+  const isMobile = useIsMobile();
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [formData, setFormData] = useState({
-    shipmentNumber: '',
-    itemId: '',
-    quantity: '',
-    origin: '',
-    destination: '',
-    locationId: '',
+    containerNumber: '',
+    billOfLading: '',
+    supplierId: '',
     departureDate: new Date().toISOString().split('T')[0],
     arrivalDate: '',
-    status: 'pending' as Shipment['status'],
-    notes: ''
+    status: 'in_transit' as Shipment['status'],
+    shippingCost: '',
+    customsFees: '',
+    insurance: '',
+    currencyId: '',
+    items: [] as ShipmentItem[]
+  });
+
+  // Item form for adding items to shipment
+  const [itemForm, setItemForm] = useState({
+    itemId: '',
+    quantity: '',
+    weight: '',
+    volume: ''
   });
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [shipmentsData, itemsData, locationsData] = await Promise.all([
+      const [shipmentsData, itemsData, suppliersData, currenciesData] = await Promise.all([
         SupabaseShipmentsStorage.getAll(),
         SupabaseItemsStorage.getAll(),
-        SupabaseLocationsStorage.getAll()
+        SupabaseSuppliersStorage.getAll(),
+        SupabaseCurrenciesStorage.getAll()
       ]);
       setShipments(shipmentsData);
       setItems(itemsData);
-      setLocations(locationsData);
+      setSuppliers(suppliersData);
+      setCurrencies(currenciesData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
+      toast.error('فشل تحميل البيانات');
     } finally {
       setLoading(false);
     }
@@ -68,18 +83,22 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       setItems(newItems);
     });
 
-    const unsubscribeLocations = SupabaseLocationsStorage.subscribe((newLocations) => {
-      setLocations(newLocations);
+    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
+      setSuppliers(newSuppliers);
+    });
+
+    const unsubscribeCurrencies = SupabaseCurrenciesStorage.subscribe((newCurrencies) => {
+      setCurrencies(newCurrencies);
     });
 
     return () => {
       unsubscribeShipments();
       unsubscribeItems();
-      unsubscribeLocations();
+      unsubscribeSuppliers();
+      unsubscribeCurrencies();
     };
   }, []);
 
-  // Handle quick action trigger
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-shipment') {
       handleAddShipment();
@@ -87,8 +106,15 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
   }, [quickActionTrigger]);
 
   const filteredShipments = shipments.filter(shipment =>
-    shipment?.shipmentNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    shipment?.containerNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    shipment?.billOfLading?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const getSupplierName = (supplierId: string) => {
+    if (!supplierId) return 'غير محدد';
+    const supplier = suppliers.find(s => s?.id === supplierId);
+    return supplier?.name || 'غير محدد';
+  };
 
   const getItemName = (itemId: string) => {
     if (!itemId) return 'غير محدد';
@@ -96,109 +122,168 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     return item?.name || 'غير محدد';
   };
 
-  const getLocationName = (locationId: string) => {
-    if (!locationId) return 'غير محدد';
-    const location = locations.find(l => l?.id === locationId);
-    return location?.name || 'غير محدد';
+  const getCurrencySymbol = (currencyId?: string) => {
+    if (!currencyId) return '';
+    const currency = currencies.find(c => c?.id === currencyId);
+    return currency?.symbol || '';
   };
 
   const resetForm = () => {
     setFormData({
-      shipmentNumber: '',
-      itemId: '',
-      quantity: '',
-      origin: '',
-      destination: '',
-      locationId: '',
+      containerNumber: '',
+      billOfLading: '',
+      supplierId: '',
       departureDate: new Date().toISOString().split('T')[0],
       arrivalDate: '',
-      status: 'pending',
-      notes: ''
+      status: 'in_transit',
+      shippingCost: '',
+      customsFees: '',
+      insurance: '',
+      currencyId: '',
+      items: []
+    });
+    setItemForm({
+      itemId: '',
+      quantity: '',
+      weight: '',
+      volume: ''
     });
   };
 
-  const handleAddShipment = async () => {
+  const handleAddShipment = () => {
     setEditingShipment(null);
     resetForm();
-    const shipmentNumber = await generateShipmentNumber();
-    setFormData(prev => ({
-      ...prev,
-      shipmentNumber
-    }));
     setIsDialogOpen(true);
   };
 
   const handleEditShipment = (shipment: Shipment) => {
     setEditingShipment(shipment);
     setFormData({
-      shipmentNumber: shipment?.shipmentNumber || '',
-      itemId: shipment?.itemId || '',
-      quantity: (shipment?.quantity || 0).toString(),
-      origin: shipment?.origin || '',
-      destination: shipment?.destination || '',
-      locationId: shipment?.locationId || '',
+      containerNumber: shipment?.containerNumber || '',
+      billOfLading: shipment?.billOfLading || '',
+      supplierId: shipment?.supplierId || '',
       departureDate: shipment?.departureDate || new Date().toISOString().split('T')[0],
       arrivalDate: shipment?.arrivalDate || '',
-      status: shipment?.status || 'pending',
-      notes: shipment?.notes || ''
+      status: shipment?.status || 'in_transit',
+      shippingCost: (shipment?.shippingCost || 0).toString(),
+      customsFees: (shipment?.customsFees || 0).toString(),
+      insurance: (shipment?.insurance || 0).toString(),
+      currencyId: shipment?.currencyId || '',
+      items: shipment?.items || []
     });
     setIsDialogOpen(true);
   };
 
+  const handleAddItemToShipment = () => {
+    if (!itemForm.itemId || !itemForm.quantity) {
+      toast.error('يرجى اختيار الصنف وإدخال الكمية');
+      return;
+    }
+
+    const newItem: ShipmentItem = {
+      itemId: itemForm.itemId,
+      quantity: parseInt(itemForm.quantity) || 0,
+      weight: itemForm.weight ? parseFloat(itemForm.weight) : undefined,
+      volume: itemForm.volume ? parseFloat(itemForm.volume) : undefined
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, newItem]
+    }));
+
+    setItemForm({
+      itemId: '',
+      quantity: '',
+      weight: '',
+      volume: ''
+    });
+
+    toast.success('تم إضافة الصنف إلى الشحنة');
+  };
+
+  const handleRemoveItemFromShipment = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+    toast.success('تم إزالة الصنف من الشحنة');
+  };
+
   const handleSaveShipment = async () => {
-    if (!formData.itemId || !formData.quantity || !formData.origin || !formData.destination) {
-      alert('يرجى ملء جميع الحقول المطلوبة');
+    if (!formData.containerNumber || !formData.billOfLading || !formData.supplierId) {
+      toast.error('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+
+    if (formData.items.length === 0) {
+      toast.error('يرجى إضافة صنف واحد على الأقل إلى الشحنة');
       return;
     }
 
     try {
       const shipmentData = {
-        shipmentNumber: formData.shipmentNumber,
-        itemId: formData.itemId,
-        quantity: parseInt(formData.quantity) || 0,
-        origin: formData.origin,
-        destination: formData.destination,
-        locationId: formData.locationId,
+        containerNumber: formData.containerNumber,
+        billOfLading: formData.billOfLading,
+        supplierId: formData.supplierId,
         departureDate: formData.departureDate,
-        arrivalDate: formData.arrivalDate,
+        arrivalDate: formData.arrivalDate || null,
         status: formData.status,
-        notes: formData.notes
+        shippingCost: parseFloat(formData.shippingCost) || 0,
+        customsFees: parseFloat(formData.customsFees) || 0,
+        insurance: formData.insurance ? parseFloat(formData.insurance) : undefined,
+        currencyId: formData.currencyId || undefined,
+        items: formData.items
       };
 
       if (editingShipment) {
         await SupabaseShipmentsStorage.update(editingShipment.id, shipmentData);
+        toast.success('تم تحديث الشحنة بنجاح');
       } else {
         await SupabaseShipmentsStorage.add(shipmentData);
+        toast.success('تم إضافة الشحنة بنجاح');
       }
 
       setIsDialogOpen(false);
       resetForm();
     } catch (error) {
       console.error('خطأ في حفظ الشحنة:', error);
-      alert('حدث خطأ أثناء حفظ الشحنة');
+      toast.error('حدث خطأ أثناء حفظ الشحنة');
     }
   };
 
   const handleDeleteShipment = async (shipmentId: string) => {
-    if (confirm('هل أنت متأكد من حذف هذه الشحنة؟')) {
-      try {
-        await SupabaseShipmentsStorage.delete(shipmentId);
-      } catch (error) {
-        console.error('خطأ في حذف الشحنة:', error);
-        alert('حدث خطأ أثناء حذف الشحنة');
+    if (!confirm('هل أنت متأكد من حذف هذه الشحنة؟')) return;
+
+    try {
+      const result = await SupabaseShipmentsStorage.delete(shipmentId);
+      if (result.success) {
+        toast.success('تم حذف الشحنة بنجاح');
+      } else {
+        toast.error(result.message);
       }
+    } catch (error) {
+      console.error('خطأ في حذف الشحنة:', error);
+      toast.error('حدث خطأ أثناء حذف الشحنة');
     }
   };
 
   const getStatusBadge = (status: Shipment['status']) => {
     const statusConfig = {
-      pending: { label: 'قيد الانتظار', className: 'bg-yellow-100 text-yellow-800' },
       in_transit: { label: 'في الطريق', className: 'bg-blue-100 text-blue-800' },
-      delivered: { label: 'تم التسليم', className: 'bg-green-100 text-green-800' },
-      cancelled: { label: 'ملغاة', className: 'bg-red-100 text-red-800' }
+      arrived: { label: 'وصلت', className: 'bg-green-100 text-green-800' },
+      customs: { label: 'في الجمارك', className: 'bg-yellow-100 text-yellow-800' },
+      delivered: { label: 'تم التسليم', className: 'bg-emerald-100 text-emerald-800' }
     };
-    const config = statusConfig[status] || statusConfig.pending;
+    const config = statusConfig[status] || statusConfig.in_transit;
     return <Badge className={config.className}>{config.label}</Badge>;
+  };
+
+  const calculateTotalCost = (shipment: Shipment) => {
+    const shipping = shipment?.shippingCost || 0;
+    const customs = shipment?.customsFees || 0;
+    const insurance = shipment?.insurance || 0;
+    return shipping + customs + insurance;
   };
 
   if (loading) {
@@ -214,12 +299,12 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">إدارة الشحن</h1>
           <p className="text-gray-600 mt-2">إدارة جميع الشحنات والحاويات</p>
         </div>
-        <Button onClick={handleAddShipment} className="flex items-center">
+        <Button onClick={handleAddShipment} className="flex items-center w-full sm:w-auto">
           <Plus className="h-4 w-4 ml-2" />
           إضافة شحنة جديدة
         </Button>
@@ -230,16 +315,14 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
           <CardTitle>البحث والفلتر</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex space-x-4 space-x-reverse">
-            <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="البحث برقم الشحنة..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pr-10"
-              />
-            </div>
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="البحث برقم الحاوية أو بوليصة الشحن..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pr-10"
+            />
           </div>
         </CardContent>
       </Card>
@@ -253,76 +336,154 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
           <CardDescription>جميع الشحنات المسجلة في النظام</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>رقم الشحنة</TableHead>
-                <TableHead>الصنف</TableHead>
-                <TableHead>الكمية</TableHead>
-                <TableHead>من</TableHead>
-                <TableHead>إلى</TableHead>
-                <TableHead>الموقع</TableHead>
-                <TableHead>تاريخ المغادرة</TableHead>
-                <TableHead>تاريخ الوصول</TableHead>
-                <TableHead>الحالة</TableHead>
-                <TableHead>الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {isMobile ? (
+            <div className="space-y-4">
               {filteredShipments.map((shipment) => (
-                <TableRow key={shipment?.id}>
-                  <TableCell className="font-medium">{shipment?.shipmentNumber || 'غير محدد'}</TableCell>
-                  <TableCell>{getItemName(shipment?.itemId || '')}</TableCell>
-                  <TableCell>{shipment?.quantity || 0}</TableCell>
-                  <TableCell>{shipment?.origin || 'غير محدد'}</TableCell>
-                  <TableCell>{shipment?.destination || 'غير محدد'}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center text-sm">
-                      <MapPin className="h-3 w-3 ml-1" />
-                      {getLocationName(shipment?.locationId || '')}
+                <Card key={shipment?.id} className="border-2">
+                  <CardContent className="pt-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-semibold text-lg">{shipment?.containerNumber}</p>
+                          <p className="text-sm text-gray-600">{shipment?.billOfLading}</p>
+                        </div>
+                        {getStatusBadge(shipment?.status || 'in_transit')}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-gray-600">المورد</p>
+                          <p className="font-medium">{getSupplierName(shipment?.supplierId || '')}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">العملة</p>
+                          <p className="font-medium">{getCurrencySymbol(shipment?.currencyId)}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="flex items-center">
+                          <Calendar className="h-3 w-3 ml-1" />
+                          <span>{shipment?.departureDate}</span>
+                        </div>
+                        <div className="flex items-center">
+                          <Calendar className="h-3 w-3 ml-1" />
+                          <span>{shipment?.arrivalDate || 'غير محدد'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center text-sm">
+                        <DollarSign className="h-3 w-3 ml-1" />
+                        <span>التكلفة الإجمالية: {calculateTotalCost(shipment).toFixed(2)} {getCurrencySymbol(shipment?.currencyId)}</span>
+                      </div>
+
+                      <div className="flex items-center text-sm">
+                        <Package className="h-3 w-3 ml-1" />
+                        <span>عدد الأصناف: {shipment?.items?.length || 0}</span>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditShipment(shipment)}
+                          className="flex-1"
+                        >
+                          <Edit className="h-4 w-4 ml-1" />
+                          تعديل
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteShipment(shipment?.id || '')}
+                          className="flex-1 text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4 ml-1" />
+                          حذف
+                        </Button>
+                      </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center text-sm">
-                      <Calendar className="h-3 w-3 ml-1" />
-                      {shipment?.departureDate || 'غير محدد'}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center text-sm">
-                      <Calendar className="h-3 w-3 ml-1" />
-                      {shipment?.arrivalDate || 'غير محدد'}
-                    </div>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(shipment?.status || 'pending')}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2 space-x-reverse">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditShipment(shipment)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteShipment(shipment?.id || '')}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                  </CardContent>
+                </Card>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>رقم الحاوية</TableHead>
+                    <TableHead>بوليصة الشحن</TableHead>
+                    <TableHead>المورد</TableHead>
+                    <TableHead>تاريخ المغادرة</TableHead>
+                    <TableHead>تاريخ الوصول</TableHead>
+                    <TableHead>الحالة</TableHead>
+                    <TableHead>التكلفة الإجمالية</TableHead>
+                    <TableHead>الأصناف</TableHead>
+                    <TableHead>الإجراءات</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredShipments.map((shipment) => (
+                    <TableRow key={shipment?.id}>
+                      <TableCell className="font-medium">{shipment?.containerNumber}</TableCell>
+                      <TableCell>{shipment?.billOfLading}</TableCell>
+                      <TableCell>{getSupplierName(shipment?.supplierId || '')}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center text-sm">
+                          <Calendar className="h-3 w-3 ml-1" />
+                          {shipment?.departureDate}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center text-sm">
+                          <Calendar className="h-3 w-3 ml-1" />
+                          {shipment?.arrivalDate || 'غير محدد'}
+                        </div>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(shipment?.status || 'in_transit')}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <DollarSign className="h-3 w-3 ml-1" />
+                          {calculateTotalCost(shipment).toFixed(2)} {getCurrencySymbol(shipment?.currencyId)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Package className="h-3 w-3 ml-1" />
+                          {shipment?.items?.length || 0}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2 space-x-reverse">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditShipment(shipment)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteShipment(shipment?.id || '')}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingShipment ? 'تعديل الشحنة' : 'إضافة شحنة جديدة'}
@@ -331,116 +492,223 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
               {editingShipment ? 'تعديل بيانات الشحنة المحددة' : 'إضافة شحنة جديدة إلى النظام'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="shipmentNumber">رقم الشحنة</Label>
-              <Input 
-                id="shipmentNumber" 
-                value={formData.shipmentNumber}
-                disabled
-                className="bg-gray-50"
-              />
+          
+          <div className="space-y-6">
+            {/* معلومات الشحنة الأساسية */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="containerNumber">رقم الحاوية *</Label>
+                <Input 
+                  id="containerNumber" 
+                  placeholder="أدخل رقم الحاوية"
+                  value={formData.containerNumber}
+                  onChange={(e) => setFormData(prev => ({...prev, containerNumber: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="billOfLading">بوليصة الشحن *</Label>
+                <Input 
+                  id="billOfLading" 
+                  placeholder="أدخل رقم بوليصة الشحن"
+                  value={formData.billOfLading}
+                  onChange={(e) => setFormData(prev => ({...prev, billOfLading: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="supplier">المورد *</Label>
+                <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر المورد" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier?.id} value={supplier?.id || ''}>
+                        {supplier?.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency">العملة</Label>
+                <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر العملة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencies.map((currency) => (
+                      <SelectItem key={currency?.id} value={currency?.id || ''}>
+                        {currency?.name} ({currency?.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="departureDate">تاريخ المغادرة *</Label>
+                <Input 
+                  id="departureDate" 
+                  type="date"
+                  value={formData.departureDate}
+                  onChange={(e) => setFormData(prev => ({...prev, departureDate: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="arrivalDate">تاريخ الوصول</Label>
+                <Input 
+                  id="arrivalDate" 
+                  type="date"
+                  value={formData.arrivalDate}
+                  onChange={(e) => setFormData(prev => ({...prev, arrivalDate: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status">الحالة *</Label>
+                <Select value={formData.status} onValueChange={(value: Shipment['status']) => setFormData(prev => ({...prev, status: value}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الحالة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="in_transit">في الطريق</SelectItem>
+                    <SelectItem value="arrived">وصلت</SelectItem>
+                    <SelectItem value="customs">في الجمارك</SelectItem>
+                    <SelectItem value="delivered">تم التسليم</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="item">الصنف *</Label>
-              <Select value={formData.itemId} onValueChange={(value) => setFormData(prev => ({...prev, itemId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الصنف" />
-                </SelectTrigger>
-                <SelectContent>
-                  {items.map((item) => (
-                    <SelectItem key={item?.id} value={item?.id || ''}>
-                      {item?.name || 'غير محدد'}
-                    </SelectItem>
+
+            {/* التكاليف */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="shippingCost">تكلفة الشحن</Label>
+                <Input 
+                  id="shippingCost" 
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.shippingCost}
+                  onChange={(e) => setFormData(prev => ({...prev, shippingCost: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customsFees">رسوم الجمارك</Label>
+                <Input 
+                  id="customsFees" 
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.customsFees}
+                  onChange={(e) => setFormData(prev => ({...prev, customsFees: e.target.value}))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="insurance">التأمين</Label>
+                <Input 
+                  id="insurance" 
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.insurance}
+                  onChange={(e) => setFormData(prev => ({...prev, insurance: e.target.value}))}
+                />
+              </div>
+            </div>
+
+            {/* إضافة الأصناف */}
+            <div className="border-t pt-4">
+              <h3 className="text-lg font-semibold mb-4">الأصناف في الشحنة</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="space-y-2">
+                  <Label htmlFor="itemId">الصنف</Label>
+                  <Select value={itemForm.itemId} onValueChange={(value) => setItemForm(prev => ({...prev, itemId: value}))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر الصنف" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {items.map((item) => (
+                        <SelectItem key={item?.id} value={item?.id || ''}>
+                          {item?.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">الكمية</Label>
+                  <Input 
+                    id="quantity" 
+                    type="number"
+                    placeholder="0"
+                    value={itemForm.quantity}
+                    onChange={(e) => setItemForm(prev => ({...prev, quantity: e.target.value}))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="weight">الوزن (كجم)</Label>
+                  <Input 
+                    id="weight" 
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={itemForm.weight}
+                    onChange={(e) => setItemForm(prev => ({...prev, weight: e.target.value}))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="volume">الحجم (م³)</Label>
+                  <Input 
+                    id="volume" 
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={itemForm.volume}
+                    onChange={(e) => setItemForm(prev => ({...prev, volume: e.target.value}))}
+                  />
+                </div>
+              </div>
+              
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleAddItemToShipment}
+                className="w-full md:w-auto"
+              >
+                <Plus className="h-4 w-4 ml-2" />
+                إضافة الصنف
+              </Button>
+
+              {/* قائمة الأصناف المضافة */}
+              {formData.items.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h4 className="font-medium">الأصناف المضافة:</h4>
+                  {formData.items.map((item, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium">{getItemName(item.itemId)}</p>
+                        <p className="text-sm text-gray-600">
+                          الكمية: {item.quantity}
+                          {item.weight && ` | الوزن: ${item.weight} كجم`}
+                          {item.volume && ` | الحجم: ${item.volume} م³`}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveItemFromShipment(index)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="quantity">الكمية *</Label>
-              <Input 
-                id="quantity" 
-                type="number"
-                placeholder="أدخل الكمية"
-                value={formData.quantity}
-                onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="location">الموقع</Label>
-              <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الموقع" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((location) => (
-                    <SelectItem key={location?.id} value={location?.id || ''}>
-                      {location?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="origin">من *</Label>
-              <Input 
-                id="origin" 
-                placeholder="أدخل مكان المغادرة"
-                value={formData.origin}
-                onChange={(e) => setFormData(prev => ({...prev, origin: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="destination">إلى *</Label>
-              <Input 
-                id="destination" 
-                placeholder="أدخل مكان الوصول"
-                value={formData.destination}
-                onChange={(e) => setFormData(prev => ({...prev, destination: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="departureDate">تاريخ المغادرة *</Label>
-              <Input 
-                id="departureDate" 
-                type="date"
-                value={formData.departureDate}
-                onChange={(e) => setFormData(prev => ({...prev, departureDate: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="arrivalDate">تاريخ الوصول</Label>
-              <Input 
-                id="arrivalDate" 
-                type="date"
-                value={formData.arrivalDate}
-                onChange={(e) => setFormData(prev => ({...prev, arrivalDate: e.target.value}))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="status">الحالة *</Label>
-              <Select value={formData.status} onValueChange={(value: Shipment['status']) => setFormData(prev => ({...prev, status: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الحالة" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">قيد الانتظار</SelectItem>
-                  <SelectItem value="in_transit">في الطريق</SelectItem>
-                  <SelectItem value="delivered">تم التسليم</SelectItem>
-                  <SelectItem value="cancelled">ملغاة</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="notes">ملاحظات</Label>
-              <Textarea 
-                id="notes" 
-                placeholder="أدخل أي ملاحظات إضافية"
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({...prev, notes: e.target.value}))}
-              />
+                </div>
+              )}
             </div>
           </div>
+
           <div className="flex justify-end space-x-2 space-x-reverse mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               إلغاء
