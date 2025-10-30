@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Item, Supplier, Invoice, Location, Shipment } from '@/types';
+import { toSnakeCase, toCamelCase, parseDates, mapLocationFields } from './dataMapper';
 
 type SubscriptionCallback<T> = (data: T[]) => void;
 type UnsubscribeFunction = () => void;
@@ -8,9 +9,11 @@ class SupabaseStorage<T extends { id?: string }> {
   private tableName: string;
   private subscribers: Set<SubscriptionCallback<T>> = new Set();
   private channel: ReturnType<typeof supabase.channel> | null = null;
+  private isLocationTable: boolean;
 
   constructor(tableName: string) {
     this.tableName = tableName;
+    this.isLocationTable = tableName.includes('locations');
     this.setupRealtimeSubscription();
   }
 
@@ -36,6 +39,30 @@ class SupabaseStorage<T extends { id?: string }> {
     this.subscribers.forEach(callback => callback(data));
   }
 
+  private transformFromDB(data: Record<string, unknown>): T {
+    let transformed = toCamelCase(data);
+    
+    if (this.isLocationTable) {
+      transformed = mapLocationFields(transformed, false);
+    }
+    
+    transformed = parseDates(transformed);
+    
+    return transformed as T;
+  }
+
+  private transformToDB(data: Record<string, unknown>): Record<string, unknown> {
+    let transformed = { ...data };
+    
+    if (this.isLocationTable) {
+      transformed = mapLocationFields(transformed, true);
+    }
+    
+    transformed = toSnakeCase(transformed);
+    
+    return transformed;
+  }
+
   async getAll(): Promise<T[]> {
     try {
       const { data, error } = await supabase
@@ -44,7 +71,7 @@ class SupabaseStorage<T extends { id?: string }> {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return (data || []) as T[];
+      return (data || []).map(item => this.transformFromDB(item as Record<string, unknown>));
     } catch (error) {
       console.error(`Error fetching ${this.tableName}:`, error);
       return [];
@@ -60,42 +87,46 @@ class SupabaseStorage<T extends { id?: string }> {
         .single();
 
       if (error) throw error;
-      return data as T;
+      return this.transformFromDB(data as Record<string, unknown>);
     } catch (error) {
       console.error(`Error fetching ${this.tableName} by id:`, error);
       return null;
     }
   }
 
-  async add(item: Omit<T, 'id' | 'created_at' | 'updated_at'>): Promise<T | null> {
+  async add(item: Omit<T, 'id' | 'createdAt' | 'updatedAt'>): Promise<T | null> {
     try {
+      const dbItem = this.transformToDB(item as Record<string, unknown>);
+      
       const { data, error } = await supabase
         .from(this.tableName)
-        .insert([item])
+        .insert([dbItem])
         .select()
         .single();
 
       if (error) throw error;
       await this.notifySubscribers();
-      return data as T;
+      return this.transformFromDB(data as Record<string, unknown>);
     } catch (error) {
       console.error(`Error adding ${this.tableName}:`, error);
       return null;
     }
   }
 
-  async update(id: string, updates: Partial<Omit<T, 'id' | 'created_at'>>): Promise<T | null> {
+  async update(id: string, updates: Partial<Omit<T, 'id' | 'createdAt'>>): Promise<T | null> {
     try {
+      const dbUpdates = this.transformToDB(updates as Record<string, unknown>);
+      
       const { data, error } = await supabase
         .from(this.tableName)
-        .update(updates)
+        .update(dbUpdates)
         .eq('id', id)
         .select()
         .single();
 
       if (error) throw error;
       await this.notifySubscribers();
-      return data as T;
+      return this.transformFromDB(data as Record<string, unknown>);
     } catch (error) {
       console.error(`Error updating ${this.tableName}:`, error);
       return null;
