@@ -1,18 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { 
-  Package, 
-  Users, 
-  FileText, 
-  Truck, 
-  TrendingUp, 
-  AlertTriangle,
-  DollarSign,
-  BarChart3
-} from 'lucide-react';
+import { Package, Users, FileText, Ship, TrendingUp, AlertCircle } from 'lucide-react';
 import { Item, Supplier, Invoice, Shipment } from '@/types';
 import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseInvoicesStorage, SupabaseShipmentsStorage } from '@/lib/supabaseStorage';
 
@@ -23,51 +11,33 @@ export default function Dashboard() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const safeToLocaleString = (value: number | undefined | null): string => {
-    if (value === undefined || value === null || isNaN(value)) {
-      return '0';
-    }
-    return value.toLocaleString('ar');
-  };
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
-        SupabaseItemsStorage.getAll(),
-        SupabaseSuppliersStorage.getAll(),
-        SupabaseInvoicesStorage.getAll(),
-        SupabaseShipmentsStorage.getAll()
-      ]);
-      setItems(itemsData);
-      setSuppliers(suppliersData);
-      setInvoices(invoicesData);
-      setShipments(shipmentsData);
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
+          SupabaseItemsStorage.getAll(),
+          SupabaseSuppliersStorage.getAll(),
+          SupabaseInvoicesStorage.getAll(),
+          SupabaseShipmentsStorage.getAll()
+        ]);
+        setItems(itemsData);
+        setSuppliers(suppliersData);
+        setInvoices(invoicesData);
+        setShipments(shipmentsData);
+      } catch (error) {
+        console.error('خطأ في تحميل البيانات:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadData();
 
-    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
-      setItems(newItems);
-    });
-
-    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
-      setSuppliers(newSuppliers);
-    });
-
-    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe((newInvoices) => {
-      setInvoices(newInvoices);
-    });
-
-    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe((newShipments) => {
-      setShipments(newShipments);
-    });
+    const unsubscribeItems = SupabaseItemsStorage.subscribe(setItems);
+    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe(setSuppliers);
+    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe(setInvoices);
+    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe(setShipments);
 
     return () => {
       unsubscribeItems();
@@ -77,42 +47,9 @@ export default function Dashboard() {
     };
   }, []);
 
-  const totalItems = items.length;
-  const totalSuppliers = suppliers.length;
-  const totalInvoices = invoices.length;
-  const totalShipments = shipments.length;
-
   const lowStockItems = items.filter(item => (item?.quantity || 0) < 20);
-  const pendingInvoices = invoices.filter(invoice => invoice?.status === 'pending');
-  const inTransitShipments = shipments.filter(shipment => shipment?.status === 'in_transit');
-
-  const totalInventoryValue = items.reduce((sum, item) => 
-    sum + ((item?.price || 0) * (item?.quantity || 0)), 0
-  );
-
-  const totalInvoicesValue = invoices.reduce((sum, invoice) => 
-    sum + (invoice?.totalAmount || 0), 0
-  );
-
-  const recentItems = items.slice(0, 5);
-  const recentInvoices = invoices.slice(0, 5);
-
-  const getSupplierName = (supplierId: string) => {
-    const supplier = suppliers.find(s => s?.id === supplierId);
-    return supplier?.name || 'غير محدد';
-  };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-      draft: { label: 'مسودة', variant: 'secondary' },
-      pending: { label: 'معلق', variant: 'outline' },
-      paid: { label: 'مدفوع', variant: 'default' },
-      overdue: { label: 'متأخر', variant: 'destructive' },
-    };
-    
-    const config = statusConfig[status] || { label: status, variant: 'outline' };
-    return <Badge variant={config.variant}>{config.label}</Badge>;
-  };
+  const activeShipments = shipments.filter(ship => ship?.status === 'in_transit');
+  const totalInvoiceAmount = invoices.reduce((sum, inv) => sum + (inv?.totalAmount || 0), 0);
 
   if (loading) {
     return (
@@ -126,220 +63,174 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">لوحة التحكم</h1>
-          <p className="text-gray-600 mt-2">نظرة عامة على جميع العمليات والإحصائيات</p>
-        </div>
+    <div className="space-y-4 md:space-y-6">
+      <div>
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">لوحة التحكم</h1>
+        <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">نظرة عامة على النظام</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">إجمالي الأصناف</CardTitle>
             <Package className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalItems}</div>
-            <p className="text-xs text-gray-600">
-              قيمة: {safeToLocaleString(totalInventoryValue)} ريال
-            </p>
+            <div className="text-2xl font-bold">{items.length}</div>
+            <p className="text-xs text-gray-600 mt-1">صنف مسجل</p>
           </CardContent>
         </Card>
-        
-        <Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">الموردين</CardTitle>
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalSuppliers}</div>
-            <p className="text-xs text-gray-600">مورد نشط</p>
+            <div className="text-2xl font-bold">{suppliers.length}</div>
+            <p className="text-xs text-gray-600 mt-1">مورد نشط</p>
           </CardContent>
         </Card>
-        
-        <Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">الفواتير</CardTitle>
             <FileText className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalInvoices}</div>
-            <p className="text-xs text-gray-600">
-              قيمة: {safeToLocaleString(totalInvoicesValue)} ريال
-            </p>
+            <div className="text-2xl font-bold">{invoices.length}</div>
+            <p className="text-xs text-gray-600 mt-1">فاتورة</p>
           </CardContent>
         </Card>
-        
-        <Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">الشحنات</CardTitle>
-            <Truck className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">الشحنات النشطة</CardTitle>
+            <Ship className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalShipments}</div>
-            <p className="text-xs text-gray-600">{inTransitShipments.length} في الطريق</p>
+            <div className="text-2xl font-bold">{activeShipments.length}</div>
+            <p className="text-xs text-gray-600 mt-1">شحنة في الطريق</p>
           </CardContent>
         </Card>
       </div>
 
-      {(lowStockItems.length > 0 || pendingInvoices.length > 0 || inTransitShipments.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {lowStockItems.length > 0 && (
-            <Card className="border-red-200">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center text-red-600">
-                  <AlertTriangle className="h-4 w-4 ml-2" />
-                  مخزون منخفض
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{lowStockItems.length}</div>
-                <p className="text-xs text-gray-600">صنف يحتاج تجديد</p>
-              </CardContent>
-            </Card>
-          )}
-          
-          {pendingInvoices.length > 0 && (
-            <Card className="border-yellow-200">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center text-yellow-600">
-                  <FileText className="h-4 w-4 ml-2" />
-                  فواتير معلقة
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">{pendingInvoices.length}</div>
-                <p className="text-xs text-gray-600">فاتورة تحتاج متابعة</p>
-              </CardContent>
-            </Card>
-          )}
-          
-          {inTransitShipments.length > 0 && (
-            <Card className="border-blue-200">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center text-blue-600">
-                  <Truck className="h-4 w-4 ml-2" />
-                  شحنات في الطريق
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">{inTransitShipments.length}</div>
-                <p className="text-xs text-gray-600">شحنة متوقعة الوصول</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+      {/* Secondary Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="flex items-center text-lg md:text-xl">
+              <TrendingUp className="h-5 w-5 ml-2 text-green-600" />
+              إجمالي قيمة الفواتير
+            </CardTitle>
+            <CardDescription className="text-sm">مجموع جميع الفواتير المسجلة</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl md:text-4xl font-bold text-green-600">
+              {totalInvoiceAmount.toLocaleString('ar')} ريال
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="flex items-center text-lg md:text-xl">
+              <AlertCircle className="h-5 w-5 ml-2 text-red-600" />
+              تنبيهات المخزون
+            </CardTitle>
+            <CardDescription className="text-sm">أصناف تحتاج إعادة طلب</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl md:text-4xl font-bold text-red-600">
+              {lowStockItems.length}
+            </div>
+            <p className="text-sm text-gray-600 mt-2">صنف أقل من 20 وحدة</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Low Stock Items */}
+      {lowStockItems.length > 0 && (
+        <Card className="border-red-200 bg-red-50/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center text-red-700 text-lg md:text-xl">
+              <AlertCircle className="h-5 w-5 ml-2" />
+              أصناف منخفضة المخزون
+            </CardTitle>
+            <CardDescription className="text-sm">الأصناف التي تحتاج إعادة طلب</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {lowStockItems.slice(0, 5).map((item) => (
+                <div key={item?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-red-200 gap-2">
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">{item?.name || 'غير محدد'}</p>
+                    <p className="text-sm text-gray-500">{item?.itemNumber || 'غير محدد'}</p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-sm text-gray-500">الكمية المتبقية</p>
+                    <p className="text-lg font-bold text-red-600">
+                      {item?.quantity || 0} {item?.unit || ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Package className="h-5 w-5 ml-2" />
-              أحدث الأصناف
-            </CardTitle>
-            <CardDescription>آخر الأصناف المضافة إلى النظام</CardDescription>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg md:text-xl">آخر الفواتير</CardTitle>
+            <CardDescription className="text-sm">أحدث 5 فواتير</CardDescription>
           </CardHeader>
           <CardContent>
-            {recentItems.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>اسم الصنف</TableHead>
-                    <TableHead>المورد</TableHead>
-                    <TableHead>الكمية</TableHead>
-                    <TableHead>السعر</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentItems.map((item) => (
-                    <TableRow key={item?.id || Math.random()}>
-                      <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
-                      <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
-                      <TableCell>{item?.quantity || 0}</TableCell>
-                      <TableCell>{safeToLocaleString(item?.price)} ريال</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                لا توجد أصناف مضافة بعد
-              </div>
-            )}
+            <div className="space-y-3">
+              {invoices.slice(0, 5).map((invoice) => (
+                <div key={invoice?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{invoice?.invoiceNumber || 'غير محدد'}</p>
+                    <p className="text-xs text-gray-500">{invoice?.issueDate || 'غير محدد'}</p>
+                  </div>
+                  <p className="text-sm font-semibold text-blue-600">
+                    {(invoice?.totalAmount || 0).toLocaleString('ar')} ريال
+                  </p>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <FileText className="h-5 w-5 ml-2" />
-              أحدث الفواتير
-            </CardTitle>
-            <CardDescription>آخر الفواتير المضافة إلى النظام</CardDescription>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg md:text-xl">الشحنات النشطة</CardTitle>
+            <CardDescription className="text-sm">شحنات في الطريق</CardDescription>
           </CardHeader>
           <CardContent>
-            {recentInvoices.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>رقم الفاتورة</TableHead>
-                    <TableHead>المورد</TableHead>
-                    <TableHead>المبلغ</TableHead>
-                    <TableHead>الحالة</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentInvoices.map((invoice) => (
-                    <TableRow key={invoice?.id || Math.random()}>
-                      <TableCell className="font-medium">{invoice?.invoiceNumber || 'غير محدد'}</TableCell>
-                      <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
-                      <TableCell>{safeToLocaleString(invoice?.totalAmount)} ريال</TableCell>
-                      <TableCell>{getStatusBadge(invoice?.status || 'draft')}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                لا توجد فواتير مضافة بعد
-              </div>
-            )}
+            <div className="space-y-3">
+              {activeShipments.slice(0, 5).map((shipment) => (
+                <div key={shipment?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{shipment?.shipmentNumber || 'غير محدد'}</p>
+                    <p className="text-xs text-gray-500">
+                      {shipment?.origin || 'غير محدد'} → {shipment?.destination || 'غير محدد'}
+                    </p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                      في الطريق
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <TrendingUp className="h-5 w-5 ml-2" />
-            إجراءات سريعة
-          </CardTitle>
-          <CardDescription>الإجراءات الأكثر استخداماً في النظام</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" className="h-20 flex flex-col">
-              <Package className="h-6 w-6 mb-2" />
-              إضافة صنف جديد
-            </Button>
-            <Button variant="outline" className="h-20 flex flex-col">
-              <Users className="h-6 w-6 mb-2" />
-              إضافة مورد جديد
-            </Button>
-            <Button variant="outline" className="h-20 flex flex-col">
-              <FileText className="h-6 w-6 mb-2" />
-              إنشاء فاتورة
-            </Button>
-            <Button variant="outline" className="h-20 flex flex-col">
-              <BarChart3 className="h-6 w-6 mb-2" />
-              عرض التقارير
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

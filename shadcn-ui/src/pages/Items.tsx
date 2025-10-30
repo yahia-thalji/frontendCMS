@@ -91,7 +91,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     };
   }, []);
 
-  // Handle quick action trigger
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-item') {
       handleAddItem();
@@ -222,101 +221,157 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">إدارة الأصناف</h1>
-          <p className="text-gray-600 mt-2">إدارة جميع الأصناف والمنتجات المستوردة</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">إدارة الأصناف</h1>
+          <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">إدارة جميع الأصناف والمنتجات المستوردة</p>
         </div>
-        <Button onClick={handleAddItem} className="flex items-center">
+        <Button onClick={handleAddItem} className="w-full sm:w-auto flex items-center justify-center">
           <Plus className="h-4 w-4 ml-2" />
           إضافة صنف جديد
         </Button>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>البحث والفلتر</CardTitle>
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="text-lg md:text-xl">البحث والفلتر</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex space-x-4 space-x-reverse">
-            <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="البحث بالاسم أو الرقم المرجعي..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pr-10"
-              />
-            </div>
+        <CardContent className="p-4 md:p-6 pt-0">
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="البحث بالاسم أو الرقم المرجعي..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pr-10"
+            />
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="flex items-center text-lg md:text-xl">
             <Package className="h-5 w-5 ml-2" />
             قائمة الأصناف ({filteredItems.length})
           </CardTitle>
-          <CardDescription>جميع الأصناف المسجلة في النظام</CardDescription>
+          <CardDescription className="text-sm">جميع الأصناف المسجلة في النظام</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>الاسم</TableHead>
-                <TableHead>الرقم المرجعي</TableHead>
-                <TableHead>الفئة</TableHead>
-                <TableHead>المورد</TableHead>
-                <TableHead>الكمية</TableHead>
-                <TableHead>السعر</TableHead>
-                <TableHead>الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredItems.map((item) => (
-                <TableRow key={item?.id || Math.random()}>
-                  <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
-                  <TableCell>{item?.itemNumber || 'غير محدد'}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
-                  </TableCell>
-                  <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
-                  <TableCell>
-                    <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
-                      {item?.quantity || 0} {item?.unit || ''}
-                    </span>
-                  </TableCell>
-                  <TableCell>{safeToLocaleString(item?.price)} ريال</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2 space-x-reverse">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditItem(item)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteItem(item?.id || '')}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+        <CardContent className="p-0 md:p-6">
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>الاسم</TableHead>
+                  <TableHead>الرقم المرجعي</TableHead>
+                  <TableHead>الفئة</TableHead>
+                  <TableHead>المورد</TableHead>
+                  <TableHead>الكمية</TableHead>
+                  <TableHead>السعر</TableHead>
+                  <TableHead>الإجراءات</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredItems.map((item) => (
+                  <TableRow key={item?.id || Math.random()}>
+                    <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
+                    <TableCell>{item?.itemNumber || 'غير محدد'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
+                    </TableCell>
+                    <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
+                    <TableCell>
+                      <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
+                        {item?.quantity || 0} {item?.unit || ''}
+                      </span>
+                    </TableCell>
+                    <TableCell>{safeToLocaleString(item?.price)} ريال</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2 space-x-reverse">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditItem(item)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteItem(item?.id || '')}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-4 p-4">
+            {filteredItems.map((item) => (
+              <Card key={item?.id || Math.random()} className="overflow-hidden">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{item?.name || 'غير محدد'}</h3>
+                      <p className="text-sm text-gray-500">{item?.itemNumber || 'غير محدد'}</p>
+                    </div>
+                    <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">المورد:</span>
+                      <p className="font-medium">{getSupplierName(item?.supplierId || '')}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">الكمية:</span>
+                      <p className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : 'font-medium'}>
+                        {item?.quantity || 0} {item?.unit || ''}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-gray-500">السعر:</span>
+                      <p className="font-medium text-lg">{safeToLocaleString(item?.price)} ريال</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditItem(item)}
+                      className="flex-1"
+                    >
+                      <Edit className="h-4 w-4 ml-1" />
+                      تعديل
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteItem(item?.id || '')}
+                      className="flex-1 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4 ml-1" />
+                      حذف
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingItem ? 'تعديل الصنف' : 'إضافة صنف جديد'}
@@ -325,7 +380,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               {editingItem ? 'تعديل بيانات الصنف المحدد' : 'إضافة صنف جديد إلى النظام'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">اسم الصنف *</Label>
               <Input 
@@ -397,7 +452,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
               />
             </div>
-            <div className="col-span-2 space-y-2">
+            <div className="col-span-1 md:col-span-2 space-y-2">
               <Label htmlFor="description">الوصف</Label>
               <Textarea 
                 id="description" 
@@ -407,11 +462,11 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
           </div>
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="w-full sm:w-auto">
               إلغاء
             </Button>
-            <Button onClick={handleSaveItem}>
+            <Button onClick={handleSaveItem} className="w-full sm:w-auto">
               {editingItem ? 'حفظ التعديل' : 'إضافة الصنف'}
             </Button>
           </div>
@@ -459,7 +514,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
             </Alert>
           )}
 
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -467,6 +522,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 setDeleteError(null);
                 setItemToDelete(null);
               }}
+              className="w-full sm:w-auto"
             >
               إلغاء
             </Button>
@@ -474,6 +530,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               <Button 
                 variant="destructive" 
                 onClick={confirmDelete}
+                className="w-full sm:w-auto"
               >
                 تأكيد الحذف
               </Button>
