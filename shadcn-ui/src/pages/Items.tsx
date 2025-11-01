@@ -148,8 +148,8 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
   };
 
   const handleSaveItem = async () => {
-    if (!formData.name || !formData.supplierId || !formData.price) {
-      alert('يرجى ملء جميع الحقول المطلوبة');
+    if (!formData.name || !formData.price) {
+      alert('يرجى ملء جميع الحقول المطلوبة (الاسم والسعر)');
       return;
     }
 
@@ -158,7 +158,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
         name: formData.name,
         itemNumber: formData.itemNumber,
         description: formData.description,
-        supplierId: formData.supplierId,
+        supplierId: formData.supplierId || undefined,
         quantity: parseInt(formData.quantity) || 0,
         unit: formData.unit,
         price: parseFloat(formData.price) || 0,
@@ -400,7 +400,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="category">الفئة *</Label>
+              <Label htmlFor="category">الفئة</Label>
               <Input 
                 id="category" 
                 placeholder="أدخل الفئة"
@@ -409,7 +409,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="supplier">المورد *</Label>
+              <Label htmlFor="supplier">المورد (اختياري)</Label>
               <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر المورد" />
@@ -434,7 +434,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="unit">وحدة القياس *</Label>
+              <Label htmlFor="unit">وحدة القياس</Label>
               <Input 
                 id="unit" 
                 placeholder="مثال: قطعة، كجم"
