@@ -41,7 +41,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     price: '',
     costPrice: '',
     category: '',
-    locationId: ''
+    locationId: 'none'
   });
 
   const safeToLocaleString = (value: number | undefined | null): string => {
@@ -111,7 +111,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       price: '',
       costPrice: '',
       category: '',
-      locationId: ''
+      locationId: 'none'
     });
   };
 
@@ -137,7 +137,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       price: (item?.price || 0).toString(),
       costPrice: (item?.costPrice || 0).toString(),
       category: item?.category || '',
-      locationId: item?.locationId || ''
+      locationId: item?.locationId || 'none'
     });
     setIsDialogOpen(true);
   };
@@ -158,7 +158,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
         price: parseFloat(formData.price) || 0,
         costPrice: formData.costPrice ? parseFloat(formData.costPrice) : undefined,
         category: formData.category,
-        locationId: formData.locationId || undefined
+        locationId: formData.locationId === 'none' ? undefined : formData.locationId
       };
 
       if (editingItem) {
@@ -411,13 +411,13 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="locationId">الموقع</Label>
+              <Label htmlFor="locationId">الموقع (اختياري)</Label>
               <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر الموقع" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">بدون موقع</SelectItem>
+                  <SelectItem value="none">بدون موقع</SelectItem>
                   {locations.map((location) => (
                     <SelectItem key={location?.id} value={location?.id || ''}>
                       {location?.name || 'غير محدد'}
