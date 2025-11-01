@@ -51,6 +51,13 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     return value.toLocaleString('ar');
   };
 
+  const safeToFixed = (value: number | undefined | null, decimals: number = 1): string => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0.0';
+    }
+    return value.toFixed(decimals);
+  };
+
   const calculateProfitMetrics = (price: number, costPrice?: number) => {
     if (!costPrice || costPrice === 0) {
       return { profitMargin: undefined, profitAmount: undefined };
@@ -65,15 +72,15 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     };
   };
 
-  const getProfitColor = (profitMargin?: number) => {
-    if (!profitMargin) return 'text-gray-500';
+  const getProfitColor = (profitMargin?: number | null) => {
+    if (profitMargin === undefined || profitMargin === null) return 'text-gray-500';
     if (profitMargin >= 30) return 'text-green-600';
     if (profitMargin >= 15) return 'text-yellow-600';
     return 'text-red-600';
   };
 
-  const getProfitBadgeVariant = (profitMargin?: number): "default" | "secondary" | "destructive" | "outline" => {
-    if (!profitMargin) return 'outline';
+  const getProfitBadgeVariant = (profitMargin?: number | null): "default" | "secondary" | "destructive" | "outline" => {
+    if (profitMargin === undefined || profitMargin === null) return 'outline';
     if (profitMargin >= 30) return 'default';
     if (profitMargin >= 15) return 'secondary';
     return 'destructive';
@@ -322,11 +329,11 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     <TableCell>{safeToLocaleString(item?.costPrice)} ريال</TableCell>
                     <TableCell className="font-semibold">{safeToLocaleString(item?.price)} ريال</TableCell>
                     <TableCell>
-                      {item?.profitMargin !== undefined ? (
+                      {item?.profitMargin !== undefined && item?.profitMargin !== null ? (
                         <div className="flex flex-col gap-1">
                           <Badge variant={getProfitBadgeVariant(item.profitMargin)} className="w-fit">
                             <TrendingUp className="h-3 w-3 ml-1" />
-                            {item.profitMargin.toFixed(1)}%
+                            {safeToFixed(item.profitMargin, 1)}%
                           </Badge>
                           <span className={`text-xs ${getProfitColor(item.profitMargin)}`}>
                             {safeToLocaleString(item.profitAmount)} ريال
@@ -395,13 +402,13 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     </div>
                   </div>
 
-                  {item?.profitMargin !== undefined && (
+                  {item?.profitMargin !== undefined && item?.profitMargin !== null && (
                     <div className="pt-2 border-t">
                       <span className="text-gray-500 text-sm">هامش الربح:</span>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant={getProfitBadgeVariant(item.profitMargin)}>
                           <TrendingUp className="h-3 w-3 ml-1" />
-                          {item.profitMargin.toFixed(1)}%
+                          {safeToFixed(item.profitMargin, 1)}%
                         </Badge>
                         <span className={`text-sm font-medium ${getProfitColor(item.profitMargin)}`}>
                           ({safeToLocaleString(item.profitAmount)} ريال)
