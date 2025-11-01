@@ -7,12 +7,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, Ship, Calendar, Package, DollarSign, X } from 'lucide-react';
-import { Shipment, ShipmentItem, Item, Supplier, Currency } from '@/types';
-import { SupabaseShipmentsStorage, SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseCurrenciesStorage } from '@/lib/supabaseStorage';
+import { Shipment, ShipmentItem, Item, Supplier } from '@/types';
+import { SupabaseShipmentsStorage, SupabaseItemsStorage, SupabaseSuppliersStorage } from '@/lib/supabaseStorage';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useCurrency } from '@/hooks/useCurrency';
+import { formatWithBaseCurrency } from '@/lib/currencyUtils';
 
 interface ShippingProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -23,11 +24,12 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const { currencies, baseCurrency } = useCurrency();
 
   const [formData, setFormData] = useState({
     containerNumber: '',
@@ -39,7 +41,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     shippingCost: '',
     customsFees: '',
     insurance: '',
-    currencyId: '',
     items: [] as ShipmentItem[]
   });
 
@@ -51,19 +52,21 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     volume: ''
   });
 
+  const formatPrice = (amount: number): string => {
+    return formatWithBaseCurrency(amount, currencies);
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [shipmentsData, itemsData, suppliersData, currenciesData] = await Promise.all([
+      const [shipmentsData, itemsData, suppliersData] = await Promise.all([
         SupabaseShipmentsStorage.getAll(),
         SupabaseItemsStorage.getAll(),
-        SupabaseSuppliersStorage.getAll(),
-        SupabaseCurrenciesStorage.getAll()
+        SupabaseSuppliersStorage.getAll()
       ]);
       setShipments(shipmentsData);
       setItems(itemsData);
       setSuppliers(suppliersData);
-      setCurrencies(currenciesData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
       toast.error('فشل تحميل البيانات');
@@ -87,15 +90,10 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       setSuppliers(newSuppliers);
     });
 
-    const unsubscribeCurrencies = SupabaseCurrenciesStorage.subscribe((newCurrencies) => {
-      setCurrencies(newCurrencies);
-    });
-
     return () => {
       unsubscribeShipments();
       unsubscribeItems();
       unsubscribeSuppliers();
-      unsubscribeCurrencies();
     };
   }, []);
 
@@ -122,12 +120,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     return item?.name || 'غير محدد';
   };
 
-  const getCurrencySymbol = (currencyId?: string) => {
-    if (!currencyId) return '';
-    const currency = currencies.find(c => c?.id === currencyId);
-    return currency?.symbol || '';
-  };
-
   const resetForm = () => {
     setFormData({
       containerNumber: '',
@@ -139,7 +131,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       shippingCost: '',
       customsFees: '',
       insurance: '',
-      currencyId: '',
       items: []
     });
     setItemForm({
@@ -168,7 +159,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       shippingCost: (shipment?.shippingCost || 0).toString(),
       customsFees: (shipment?.customsFees || 0).toString(),
       insurance: (shipment?.insurance || 0).toString(),
-      currencyId: shipment?.currencyId || '',
       items: shipment?.items || []
     });
     setIsDialogOpen(true);
@@ -232,7 +222,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
         shippingCost: parseFloat(formData.shippingCost) || 0,
         customsFees: parseFloat(formData.customsFees) || 0,
         insurance: formData.insurance ? parseFloat(formData.insurance) : undefined,
-        currencyId: formData.currencyId || undefined,
+        currencyId: baseCurrency?.id || undefined,
         items: formData.items
       };
 
@@ -303,6 +293,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">إدارة الشحن</h1>
           <p className="text-gray-600 mt-2">إدارة جميع الشحنات والحاويات</p>
+          {baseCurrency && (
+            <p className="text-xs text-gray-500 mt-1">جميع التكاليف بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
+          )}
         </div>
         <Button onClick={handleAddShipment} className="flex items-center w-full sm:w-auto">
           <Plus className="h-4 w-4 ml-2" />
@@ -355,10 +348,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                           <p className="text-gray-600">المورد</p>
                           <p className="font-medium">{getSupplierName(shipment?.supplierId || '')}</p>
                         </div>
-                        <div>
-                          <p className="text-gray-600">العملة</p>
-                          <p className="font-medium">{getCurrencySymbol(shipment?.currencyId)}</p>
-                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-sm">
@@ -374,7 +363,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
 
                       <div className="flex items-center text-sm">
                         <DollarSign className="h-3 w-3 ml-1" />
-                        <span>التكلفة الإجمالية: {calculateTotalCost(shipment).toFixed(2)} {getCurrencySymbol(shipment?.currencyId)}</span>
+                        <span>التكلفة الإجمالية: {formatPrice(calculateTotalCost(shipment))}</span>
                       </div>
 
                       <div className="flex items-center text-sm">
@@ -445,7 +434,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                       <TableCell>
                         <div className="flex items-center">
                           <DollarSign className="h-3 w-3 ml-1" />
-                          {calculateTotalCost(shipment).toFixed(2)} {getCurrencySymbol(shipment?.currencyId)}
+                          {formatPrice(calculateTotalCost(shipment))}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -490,6 +479,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
             </DialogTitle>
             <DialogDescription>
               {editingShipment ? 'تعديل بيانات الشحنة المحددة' : 'إضافة شحنة جديدة إلى النظام'}
+              {baseCurrency && (
+                <span className="block mt-1 text-xs">جميع التكاليف بـ {baseCurrency.name} ({baseCurrency.symbol})</span>
+              )}
             </DialogDescription>
           </DialogHeader>
           
@@ -524,21 +516,6 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                     {suppliers.map((supplier) => (
                       <SelectItem key={supplier?.id} value={supplier?.id || ''}>
                         {supplier?.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="currency">العملة</Label>
-                <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر العملة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currencies.map((currency) => (
-                      <SelectItem key={currency?.id} value={currency?.id || ''}>
-                        {currency?.name} ({currency?.symbol})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -581,7 +558,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
             {/* التكاليف */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="shippingCost">تكلفة الشحن</Label>
+                <Label htmlFor="shippingCost">
+                  تكلفة الشحن {baseCurrency && `(${baseCurrency.symbol})`}
+                </Label>
                 <Input 
                   id="shippingCost" 
                   type="number"
@@ -592,7 +571,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="customsFees">رسوم الجمارك</Label>
+                <Label htmlFor="customsFees">
+                  رسوم الجمارك {baseCurrency && `(${baseCurrency.symbol})`}
+                </Label>
                 <Input 
                   id="customsFees" 
                   type="number"
@@ -603,7 +584,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="insurance">التأمين</Label>
+                <Label htmlFor="insurance">
+                  التأمين {baseCurrency && `(${baseCurrency.symbol})`}
+                </Label>
                 <Input 
                   id="insurance" 
                   type="number"

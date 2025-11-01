@@ -9,10 +9,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Edit, Trash2, FileText, Calendar, X } from 'lucide-react';
-import { Invoice, InvoiceItem, Supplier, Item, Currency } from '@/types';
+import { Invoice, InvoiceItem, Supplier, Item } from '@/types';
 import { generateInvoiceNumber } from '@/lib/autoNumber';
-import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage, SupabaseCurrenciesStorage } from '@/lib/supabaseStorage';
+import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage } from '@/lib/supabaseStorage';
 import { toast } from 'sonner';
+import { useCurrency } from '@/hooks/useCurrency';
+import { formatWithBaseCurrency } from '@/lib/currencyUtils';
 
 interface InvoicesProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -22,18 +24,18 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const { currencies, baseCurrency } = useCurrency();
 
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     supplierId: '',
     issueDate: new Date().toISOString().split('T')[0],
     dueDate: '',
-    currencyId: '',
     status: 'pending' as Invoice['status'],
     notes: '',
     items: [] as InvoiceItem[]
@@ -45,19 +47,21 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     unitPrice: ''
   });
 
+  const formatPrice = (amount: number): string => {
+    return formatWithBaseCurrency(amount, currencies);
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invoicesData, suppliersData, itemsData, currenciesData] = await Promise.all([
+      const [invoicesData, suppliersData, itemsData] = await Promise.all([
         SupabaseInvoicesStorage.getAll(),
         SupabaseSuppliersStorage.getAll(),
-        SupabaseItemsStorage.getAll(),
-        SupabaseCurrenciesStorage.getAll()
+        SupabaseItemsStorage.getAll()
       ]);
       setInvoices(invoicesData);
       setSuppliers(suppliersData);
       setItems(itemsData);
-      setCurrencies(currenciesData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
       toast.error('حدث خطأ أثناء تحميل البيانات');
@@ -81,15 +85,10 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       setItems(newItems);
     });
 
-    const unsubscribeCurrencies = SupabaseCurrenciesStorage.subscribe((newCurrencies) => {
-      setCurrencies(newCurrencies);
-    });
-
     return () => {
       unsubscribeInvoices();
       unsubscribeSuppliers();
       unsubscribeItems();
-      unsubscribeCurrencies();
     };
   }, []);
 
@@ -115,17 +114,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     return item?.name || 'غير محدد';
   };
 
-  const getCurrencySymbol = (currencyId?: string) => {
-    if (!currencyId) {
-      const baseCurrency = currencies.find(c => c.isBaseCurrency);
-      return baseCurrency?.symbol || 'ر.س';
-    }
-    const currency = currencies.find(c => c?.id === currencyId);
-    return currency?.symbol || 'ر.س';
-  };
-
   const resetForm = () => {
-    const baseCurrency = currencies.find(c => c.isBaseCurrency);
     const today = new Date().toISOString().split('T')[0];
     
     setFormData({
@@ -133,7 +122,6 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       supplierId: '',
       issueDate: today,
       dueDate: '',
-      currencyId: baseCurrency?.id || '',
       status: 'pending',
       notes: '',
       items: []
@@ -159,7 +147,6 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       supplierId: invoice?.supplierId || '',
       issueDate: invoice?.issueDate || new Date().toISOString().split('T')[0],
       dueDate: invoice?.dueDate || '',
-      currencyId: invoice?.currencyId || '',
       status: invoice?.status || 'pending',
       notes: invoice?.notes || '',
       items: invoice?.items || []
@@ -225,7 +212,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
         issueDate: formData.issueDate,
         dueDate: formData.dueDate || undefined,
         totalAmount,
-        currencyId: formData.currencyId || undefined,
+        currencyId: baseCurrency?.id || undefined,
         status: formData.status,
         notes: formData.notes || undefined,
         items: formData.items
@@ -290,6 +277,9 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">إدارة الفواتير</h1>
           <p className="text-gray-600 mt-2">إدارة جميع فواتير الشراء والمدفوعات</p>
+          {baseCurrency && (
+            <p className="text-xs text-gray-500 mt-1">جميع المبالغ بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
+          )}
         </div>
         <Button onClick={handleAddInvoice} className="flex items-center">
           <Plus className="h-4 w-4 ml-2" />
@@ -345,7 +335,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                   <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
                   <TableCell>{invoice?.items?.length || 0} صنف</TableCell>
                   <TableCell className="font-semibold">
-                    {(invoice?.totalAmount || 0).toLocaleString('ar')} {getCurrencySymbol(invoice?.currencyId)}
+                    {formatPrice(invoice?.totalAmount || 0)}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center text-sm">
@@ -394,6 +384,9 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
             </DialogTitle>
             <DialogDescription>
               {editingInvoice ? 'تعديل بيانات الفاتورة المحددة' : 'إضافة فاتورة جديدة إلى النظام'}
+              {baseCurrency && (
+                <span className="block mt-1 text-xs">جميع المبالغ بـ {baseCurrency.name} ({baseCurrency.symbol})</span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -441,21 +434,6 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                   value={formData.dueDate}
                   onChange={(e) => setFormData(prev => ({...prev, dueDate: e.target.value}))}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="currency">العملة *</Label>
-                <Select value={formData.currencyId} onValueChange={(value) => setFormData(prev => ({...prev, currencyId: value}))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر العملة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currencies.map((currency) => (
-                      <SelectItem key={currency?.id} value={currency?.id || ''}>
-                        {currency?.name} ({currency?.symbol})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="status">الحالة *</Label>
@@ -514,7 +492,9 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="unitPrice">سعر الوحدة *</Label>
+                  <Label htmlFor="unitPrice">
+                    سعر الوحدة * {baseCurrency && `(${baseCurrency.symbol})`}
+                  </Label>
                   <Input 
                     id="unitPrice" 
                     type="number"
@@ -550,8 +530,8 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                         <TableRow key={index}>
                           <TableCell>{getItemName(item.itemId)}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
-                          <TableCell>{item.unitPrice.toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
-                          <TableCell className="font-semibold">{item.total.toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
+                          <TableCell>{formatPrice(item.unitPrice)}</TableCell>
+                          <TableCell className="font-semibold">{formatPrice(item.total)}</TableCell>
                           <TableCell>
                             <Button
                               variant="ghost"
@@ -566,7 +546,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                       ))}
                       <TableRow className="bg-gray-50 font-semibold">
                         <TableCell colSpan={3} className="text-left">المبلغ الإجمالي:</TableCell>
-                        <TableCell colSpan={2}>{calculateTotalAmount().toLocaleString('ar')} {getCurrencySymbol(formData.currencyId)}</TableCell>
+                        <TableCell colSpan={2}>{formatPrice(calculateTotalAmount())}</TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>
