@@ -5,6 +5,7 @@ export interface Item {
   referenceNumber: string;
   specifications: string;
   price: number;
+  costPrice?: number;
   unit: string;
   supplierId: string;
   locationId?: string;

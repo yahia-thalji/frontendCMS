@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Plus, Search, Edit, Trash2, Package, AlertTriangle } from 'lucide-react';
@@ -38,7 +39,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     quantity: '0',
     unit: '',
     price: '',
-    category: ''
+    costPrice: '',
+    category: '',
+    locationId: ''
   });
 
   const safeToLocaleString = (value: number | undefined | null): string => {
@@ -92,6 +95,12 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     item?.itemNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const getLocationName = (locationId?: string) => {
+    if (!locationId) return 'غير محدد';
+    const location = locations.find(l => l?.id === locationId);
+    return location?.name || 'غير محدد';
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -100,7 +109,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       quantity: '0',
       unit: '',
       price: '',
-      category: ''
+      costPrice: '',
+      category: '',
+      locationId: ''
     });
   };
 
@@ -124,7 +135,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       quantity: (item?.quantity || 0).toString(),
       unit: item?.unit || '',
       price: (item?.price || 0).toString(),
-      category: item?.category || ''
+      costPrice: (item?.costPrice || 0).toString(),
+      category: item?.category || '',
+      locationId: item?.locationId || ''
     });
     setIsDialogOpen(true);
   };
@@ -143,7 +156,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
         quantity: parseInt(formData.quantity) || 0,
         unit: formData.unit,
         price: parseFloat(formData.price) || 0,
-        category: formData.category
+        costPrice: formData.costPrice ? parseFloat(formData.costPrice) : undefined,
+        category: formData.category,
+        locationId: formData.locationId || undefined
       };
 
       if (editingItem) {
@@ -248,7 +263,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   <TableHead>الاسم</TableHead>
                   <TableHead>الرقم المرجعي</TableHead>
                   <TableHead>الفئة</TableHead>
+                  <TableHead>الموقع</TableHead>
                   <TableHead>الكمية</TableHead>
+                  <TableHead>سعر التكلفة</TableHead>
                   <TableHead>السعر</TableHead>
                   <TableHead>الإجراءات</TableHead>
                 </TableRow>
@@ -261,12 +278,14 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     <TableCell>
                       <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
                     </TableCell>
+                    <TableCell>{getLocationName(item?.locationId)}</TableCell>
                     <TableCell>
                       <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
                         {item?.quantity || 0} {item?.unit || ''}
                       </span>
                     </TableCell>
-                    <TableCell>{safeToLocaleString(item?.price)} ريال</TableCell>
+                    <TableCell>{safeToLocaleString(item?.costPrice)} ريال</TableCell>
+                    <TableCell className="font-semibold">{safeToLocaleString(item?.price)} ريال</TableCell>
                     <TableCell>
                       <div className="flex space-x-2 space-x-reverse">
                         <Button
@@ -307,10 +326,18 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
+                      <span className="text-gray-500">الموقع:</span>
+                      <p className="font-medium">{getLocationName(item?.locationId)}</p>
+                    </div>
+                    <div>
                       <span className="text-gray-500">الكمية:</span>
                       <p className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : 'font-medium'}>
                         {item?.quantity || 0} {item?.unit || ''}
                       </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">سعر التكلفة:</span>
+                      <p className="font-medium">{safeToLocaleString(item?.costPrice)} ريال</p>
                     </div>
                     <div>
                       <span className="text-gray-500">السعر:</span>
@@ -381,6 +408,32 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 placeholder="أدخل الفئة"
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({...prev, category: e.target.value}))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="locationId">الموقع</Label>
+              <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الموقع" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">بدون موقع</SelectItem>
+                  {locations.map((location) => (
+                    <SelectItem key={location?.id} value={location?.id || ''}>
+                      {location?.name || 'غير محدد'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="costPrice">سعر التكلفة (اختياري)</Label>
+              <Input 
+                id="costPrice" 
+                type="number" 
+                placeholder="أدخل سعر التكلفة"
+                value={formData.costPrice}
+                onChange={(e) => setFormData(prev => ({...prev, costPrice: e.target.value}))}
               />
             </div>
             <div className="space-y-2">
