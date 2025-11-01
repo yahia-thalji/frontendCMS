@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, Search, Edit, Trash2, Package, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, AlertTriangle, TrendingUp } from 'lucide-react';
 import { Item, Location } from '@/types';
 import { generateItemNumber } from '@/lib/autoNumber';
 import { SupabaseItemsStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
@@ -49,6 +49,34 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       return '0';
     }
     return value.toLocaleString('ar');
+  };
+
+  const calculateProfitMetrics = (price: number, costPrice?: number) => {
+    if (!costPrice || costPrice === 0) {
+      return { profitMargin: undefined, profitAmount: undefined };
+    }
+    
+    const profitAmount = price - costPrice;
+    const profitMargin = (profitAmount / costPrice) * 100;
+    
+    return {
+      profitMargin: Math.round(profitMargin * 100) / 100,
+      profitAmount: Math.round(profitAmount * 100) / 100
+    };
+  };
+
+  const getProfitColor = (profitMargin?: number) => {
+    if (!profitMargin) return 'text-gray-500';
+    if (profitMargin >= 30) return 'text-green-600';
+    if (profitMargin >= 15) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getProfitBadgeVariant = (profitMargin?: number): "default" | "secondary" | "destructive" | "outline" => {
+    if (!profitMargin) return 'outline';
+    if (profitMargin >= 30) return 'default';
+    if (profitMargin >= 15) return 'secondary';
+    return 'destructive';
   };
 
   const loadData = async () => {
@@ -149,14 +177,20 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     }
 
     try {
+      const price = parseFloat(formData.price) || 0;
+      const costPrice = formData.costPrice ? parseFloat(formData.costPrice) : undefined;
+      const { profitMargin, profitAmount } = calculateProfitMetrics(price, costPrice);
+
       const itemData = {
         name: formData.name,
         itemNumber: formData.itemNumber,
         description: formData.description,
         quantity: parseInt(formData.quantity) || 0,
         unit: formData.unit,
-        price: parseFloat(formData.price) || 0,
-        costPrice: formData.costPrice ? parseFloat(formData.costPrice) : undefined,
+        price,
+        costPrice,
+        profitMargin,
+        profitAmount,
         category: formData.category,
         locationId: formData.locationId === 'none' ? undefined : formData.locationId
       };
@@ -267,6 +301,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   <TableHead>الكمية</TableHead>
                   <TableHead>سعر التكلفة</TableHead>
                   <TableHead>السعر</TableHead>
+                  <TableHead>هامش الربح</TableHead>
                   <TableHead>الإجراءات</TableHead>
                 </TableRow>
               </TableHeader>
@@ -286,6 +321,21 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     </TableCell>
                     <TableCell>{safeToLocaleString(item?.costPrice)} ريال</TableCell>
                     <TableCell className="font-semibold">{safeToLocaleString(item?.price)} ريال</TableCell>
+                    <TableCell>
+                      {item?.profitMargin !== undefined ? (
+                        <div className="flex flex-col gap-1">
+                          <Badge variant={getProfitBadgeVariant(item.profitMargin)} className="w-fit">
+                            <TrendingUp className="h-3 w-3 ml-1" />
+                            {item.profitMargin.toFixed(1)}%
+                          </Badge>
+                          <span className={`text-xs ${getProfitColor(item.profitMargin)}`}>
+                            {safeToLocaleString(item.profitAmount)} ريال
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">غير محدد</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex space-x-2 space-x-reverse">
                         <Button
@@ -344,6 +394,21 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                       <p className="font-medium text-lg">{safeToLocaleString(item?.price)} ريال</p>
                     </div>
                   </div>
+
+                  {item?.profitMargin !== undefined && (
+                    <div className="pt-2 border-t">
+                      <span className="text-gray-500 text-sm">هامش الربح:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant={getProfitBadgeVariant(item.profitMargin)}>
+                          <TrendingUp className="h-3 w-3 ml-1" />
+                          {item.profitMargin.toFixed(1)}%
+                        </Badge>
+                        <span className={`text-sm font-medium ${getProfitColor(item.profitMargin)}`}>
+                          ({safeToLocaleString(item.profitAmount)} ريال)
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex gap-2 pt-2 border-t">
                     <Button
@@ -446,6 +511,30 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 onChange={(e) => setFormData(prev => ({...prev, price: e.target.value}))}
               />
             </div>
+            
+            {formData.price && formData.costPrice && (
+              <div className="col-span-1 md:col-span-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="h-5 w-5 text-blue-600" />
+                  <span className="font-semibold text-blue-900">معاينة هامش الربح</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">مبلغ الربح:</span>
+                    <p className="font-semibold text-lg text-blue-700">
+                      {safeToLocaleString(parseFloat(formData.price) - parseFloat(formData.costPrice))} ريال
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">نسبة الربح:</span>
+                    <p className="font-semibold text-lg text-blue-700">
+                      {(((parseFloat(formData.price) - parseFloat(formData.costPrice)) / parseFloat(formData.costPrice)) * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="unit">وحدة القياس</Label>
               <Input 

@@ -6,6 +6,8 @@ export interface Item {
   specifications: string;
   price: number;
   costPrice?: number;
+  profitMargin?: number;
+  profitAmount?: number;
   unit: string;
   supplierId: string;
   locationId?: string;
