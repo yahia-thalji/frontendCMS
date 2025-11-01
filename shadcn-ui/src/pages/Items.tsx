@@ -13,6 +13,8 @@ import { Plus, Search, Edit, Trash2, Package, AlertTriangle, TrendingUp } from '
 import { Item, Location } from '@/types';
 import { generateItemNumber } from '@/lib/autoNumber';
 import { SupabaseItemsStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
+import { useCurrency } from '@/hooks/useCurrency';
+import { formatWithBaseCurrency } from '@/lib/currencyUtils';
 
 interface ItemsProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -31,6 +33,8 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     message: string;
     relatedEntities?: Array<{ type: string; count: number; items: string[] }>;
   } | null>(null);
+
+  const { currencies, baseCurrency } = useCurrency();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -56,6 +60,13 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       return '0.0';
     }
     return value.toFixed(decimals);
+  };
+
+  const formatPrice = (amount: number | undefined | null): string => {
+    if (amount === undefined || amount === null || isNaN(amount)) {
+      return baseCurrency ? `0 ${baseCurrency.symbol}` : '0';
+    }
+    return formatWithBaseCurrency(amount, currencies);
   };
 
   const calculateProfitMetrics = (price: number, costPrice?: number) => {
@@ -263,6 +274,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">إدارة الأصناف</h1>
           <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">إدارة جميع الأصناف والمنتجات المستوردة</p>
+          {baseCurrency && (
+            <p className="text-xs text-gray-500 mt-1">جميع الأسعار بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
+          )}
         </div>
         <Button onClick={handleAddItem} className="w-full sm:w-auto flex items-center justify-center">
           <Plus className="h-4 w-4 ml-2" />
@@ -326,8 +340,8 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                         {item?.quantity || 0} {item?.unit || ''}
                       </span>
                     </TableCell>
-                    <TableCell>{safeToLocaleString(item?.costPrice)} ريال</TableCell>
-                    <TableCell className="font-semibold">{safeToLocaleString(item?.price)} ريال</TableCell>
+                    <TableCell>{formatPrice(item?.costPrice)}</TableCell>
+                    <TableCell className="font-semibold">{formatPrice(item?.price)}</TableCell>
                     <TableCell>
                       {item?.profitMargin !== undefined && item?.profitMargin !== null ? (
                         <div className="flex flex-col gap-1">
@@ -336,7 +350,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                             {safeToFixed(item.profitMargin, 1)}%
                           </Badge>
                           <span className={`text-xs ${getProfitColor(item.profitMargin)}`}>
-                            {safeToLocaleString(item.profitAmount)} ريال
+                            {formatPrice(item.profitAmount)}
                           </span>
                         </div>
                       ) : (
@@ -394,11 +408,11 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     </div>
                     <div>
                       <span className="text-gray-500">سعر التكلفة:</span>
-                      <p className="font-medium">{safeToLocaleString(item?.costPrice)} ريال</p>
+                      <p className="font-medium">{formatPrice(item?.costPrice)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">السعر:</span>
-                      <p className="font-medium text-lg">{safeToLocaleString(item?.price)} ريال</p>
+                      <p className="font-medium text-lg">{formatPrice(item?.price)}</p>
                     </div>
                   </div>
 
@@ -411,7 +425,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                           {safeToFixed(item.profitMargin, 1)}%
                         </Badge>
                         <span className={`text-sm font-medium ${getProfitColor(item.profitMargin)}`}>
-                          ({safeToLocaleString(item.profitAmount)} ريال)
+                          ({formatPrice(item.profitAmount)})
                         </span>
                       </div>
                     </div>
@@ -452,6 +466,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
             </DialogTitle>
             <DialogDescription>
               {editingItem ? 'تعديل بيانات الصنف المحدد' : 'إضافة صنف جديد إلى النظام'}
+              {baseCurrency && (
+                <span className="block mt-1 text-xs">الأسعار بـ {baseCurrency.name} ({baseCurrency.symbol})</span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -499,7 +516,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="costPrice">سعر التكلفة (اختياري)</Label>
+              <Label htmlFor="costPrice">
+                سعر التكلفة (اختياري) {baseCurrency && `(${baseCurrency.symbol})`}
+              </Label>
               <Input 
                 id="costPrice" 
                 type="number" 
@@ -509,7 +528,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price">السعر *</Label>
+              <Label htmlFor="price">
+                السعر * {baseCurrency && `(${baseCurrency.symbol})`}
+              </Label>
               <Input 
                 id="price" 
                 type="number" 
@@ -529,7 +550,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   <div>
                     <span className="text-gray-600">مبلغ الربح:</span>
                     <p className="font-semibold text-lg text-blue-700">
-                      {safeToLocaleString(parseFloat(formData.price) - parseFloat(formData.costPrice))} ريال
+                      {formatPrice(parseFloat(formData.price) - parseFloat(formData.costPrice))}
                     </p>
                   </div>
                   <div>
