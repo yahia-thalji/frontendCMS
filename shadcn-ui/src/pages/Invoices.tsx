@@ -127,14 +127,12 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const resetForm = () => {
     const baseCurrency = currencies.find(c => c.isBaseCurrency);
     const today = new Date().toISOString().split('T')[0];
-    const nextMonth = new Date();
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
     
     setFormData({
       invoiceNumber: '',
       supplierId: '',
       issueDate: today,
-      dueDate: nextMonth.toISOString().split('T')[0],
+      dueDate: '',
       currencyId: baseCurrency?.id || '',
       status: 'pending',
       notes: '',
@@ -208,8 +206,8 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   };
 
   const handleSaveInvoice = async () => {
-    if (!formData.supplierId || !formData.issueDate || !formData.dueDate) {
-      toast.error('يرجى ملء جميع الحقول المطلوبة');
+    if (!formData.supplierId || !formData.issueDate) {
+      toast.error('يرجى ملء جميع الحقول المطلوبة (المورد وتاريخ الإصدار)');
       return;
     }
 
@@ -225,7 +223,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
         invoiceNumber: formData.invoiceNumber,
         supplierId: formData.supplierId,
         issueDate: formData.issueDate,
-        dueDate: formData.dueDate,
+        dueDate: formData.dueDate || undefined,
         totalAmount,
         currencyId: formData.currencyId || undefined,
         status: formData.status,
@@ -436,7 +434,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dueDate">تاريخ الاستحقاق *</Label>
+                <Label htmlFor="dueDate">تاريخ الاستحقاق (اختياري)</Label>
                 <Input 
                   id="dueDate" 
                   type="date"
