@@ -6,13 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Plus, Search, Edit, Trash2, Package, AlertTriangle } from 'lucide-react';
-import { Item, Supplier, Location } from '@/types';
+import { Item, Location } from '@/types';
 import { generateItemNumber } from '@/lib/autoNumber';
-import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
+import { SupabaseItemsStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
 
 interface ItemsProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -20,7 +19,6 @@ interface ItemsProps {
 
 export default function Items({ quickActionTrigger }: ItemsProps) {
   const [items, setItems] = useState<Item[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -37,7 +35,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     name: '',
     itemNumber: '',
     description: '',
-    supplierId: '',
     quantity: '0',
     unit: '',
     price: '',
@@ -54,13 +51,11 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [itemsData, suppliersData, locationsData] = await Promise.all([
+      const [itemsData, locationsData] = await Promise.all([
         SupabaseItemsStorage.getAll(),
-        SupabaseSuppliersStorage.getAll(),
         SupabaseLocationsStorage.getAll()
       ]);
       setItems(itemsData);
-      setSuppliers(suppliersData);
       setLocations(locationsData);
     } catch (error) {
       console.error('خطأ في تحميل البيانات:', error);
@@ -76,17 +71,12 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       setItems(newItems);
     });
 
-    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
-      setSuppliers(newSuppliers);
-    });
-
     const unsubscribeLocations = SupabaseLocationsStorage.subscribe((newLocations) => {
       setLocations(newLocations);
     });
 
     return () => {
       unsubscribeItems();
-      unsubscribeSuppliers();
       unsubscribeLocations();
     };
   }, []);
@@ -102,18 +92,11 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     item?.itemNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getSupplierName = (supplierId: string) => {
-    if (!supplierId) return 'غير محدد';
-    const supplier = suppliers.find(s => s?.id === supplierId);
-    return supplier?.name || 'غير محدد';
-  };
-
   const resetForm = () => {
     setFormData({
       name: '',
       itemNumber: '',
       description: '',
-      supplierId: '',
       quantity: '0',
       unit: '',
       price: '',
@@ -138,7 +121,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
       name: item?.name || '',
       itemNumber: item?.itemNumber || '',
       description: item?.description || '',
-      supplierId: item?.supplierId || '',
       quantity: (item?.quantity || 0).toString(),
       unit: item?.unit || '',
       price: (item?.price || 0).toString(),
@@ -158,7 +140,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
         name: formData.name,
         itemNumber: formData.itemNumber,
         description: formData.description,
-        supplierId: formData.supplierId || undefined,
         quantity: parseInt(formData.quantity) || 0,
         unit: formData.unit,
         price: parseFloat(formData.price) || 0,
@@ -267,7 +248,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   <TableHead>الاسم</TableHead>
                   <TableHead>الرقم المرجعي</TableHead>
                   <TableHead>الفئة</TableHead>
-                  <TableHead>المورد</TableHead>
                   <TableHead>الكمية</TableHead>
                   <TableHead>السعر</TableHead>
                   <TableHead>الإجراءات</TableHead>
@@ -281,7 +261,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     <TableCell>
                       <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
                     </TableCell>
-                    <TableCell>{getSupplierName(item?.supplierId || '')}</TableCell>
                     <TableCell>
                       <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
                         {item?.quantity || 0} {item?.unit || ''}
@@ -328,16 +307,12 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                   
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="text-gray-500">المورد:</span>
-                      <p className="font-medium">{getSupplierName(item?.supplierId || '')}</p>
-                    </div>
-                    <div>
                       <span className="text-gray-500">الكمية:</span>
                       <p className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : 'font-medium'}>
                         {item?.quantity || 0} {item?.unit || ''}
                       </p>
                     </div>
-                    <div className="col-span-2">
+                    <div>
                       <span className="text-gray-500">السعر:</span>
                       <p className="font-medium text-lg">{safeToLocaleString(item?.price)} ريال</p>
                     </div>
@@ -407,21 +382,6 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({...prev, category: e.target.value}))}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="supplier">المورد (اختياري)</Label>
-              <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر المورد" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier?.id} value={supplier?.id || ''}>
-                      {supplier?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="price">السعر *</Label>
