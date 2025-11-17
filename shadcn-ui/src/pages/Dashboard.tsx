@@ -1,55 +1,59 @@
-import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, Users, FileText, Ship, TrendingUp, AlertCircle } from 'lucide-react';
-import { Item, Supplier, Invoice, Shipment } from '@/types';
-import { SupabaseItemsStorage, SupabaseSuppliersStorage, SupabaseInvoicesStorage, SupabaseShipmentsStorage } from '@/lib/supabaseStorage';
+import { Package, Users, FileText, Ship, TrendingUp, AlertCircle, RefreshCw } from 'lucide-react';
+import { useGetDashboardStats, useGetLowStockItems, useGetRecentInvoices, useGetActiveShipments } from '@/pages/API/dashboardAPI';
+import { useGetAllCurrencies } from '@/pages/API/CurrenciesAPI'; 
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 
 export default function Dashboard() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { 
+    data: statsData, 
+    isLoading: statsLoading, 
+    error: statsError, 
+    refetch: refetchStats 
+  } = useGetDashboardStats();
+  
+  const { 
+    data: lowStockItemsData, 
+    isLoading: lowStockLoading 
+  } = useGetLowStockItems();
+  
+  const { 
+    data: recentInvoicesData 
+  } = useGetRecentInvoices();
+  
+  const { 
+    data: activeShipmentsData 
+  } = useGetActiveShipments();
+  
+  const { 
+    data: currenciesData 
+  } = useGetAllCurrencies();
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [itemsData, suppliersData, invoicesData, shipmentsData] = await Promise.all([
-          SupabaseItemsStorage.getAll(),
-          SupabaseSuppliersStorage.getAll(),
-          SupabaseInvoicesStorage.getAll(),
-          SupabaseShipmentsStorage.getAll()
-        ]);
-        setItems(itemsData);
-        setSuppliers(suppliersData);
-        setInvoices(invoicesData);
-        setShipments(shipmentsData);
-      } catch (error) {
-        console.error('خطأ في تحميل البيانات:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const stats = statsData || {
+    totalItems: 0,
+    totalSuppliers: 0,
+    totalInvoices: 0,
+    activeShipments: 0,
+    totalInvoiceAmount: 0
+  };
 
-    loadData();
+  const lowStockItems = Array.isArray(lowStockItemsData) ? lowStockItemsData : [];
+  const recentInvoices = Array.isArray(recentInvoicesData) ? recentInvoicesData : [];
+  const activeShipments = Array.isArray(activeShipmentsData) ? activeShipmentsData : [];
+  const currencies = Array.isArray(currenciesData) ? currenciesData : [];
+  const baseCurrency = currencies.find(c => c.isBase);
 
-    const unsubscribeItems = SupabaseItemsStorage.subscribe(setItems);
-    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe(setSuppliers);
-    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe(setInvoices);
-    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe(setShipments);
+  const loading = statsLoading || lowStockLoading;
 
-    return () => {
-      unsubscribeItems();
-      unsubscribeSuppliers();
-      unsubscribeInvoices();
-      unsubscribeShipments();
-    };
-  }, []);
+  const formatPrice = (amount: number): string => {
+    if (!baseCurrency) return amount.toString();
+    return `${amount.toLocaleString('ar')} ${baseCurrency.symbol}`;
+  };
 
-  const lowStockItems = items.filter(item => (item?.quantity || 0) < 20);
-  const activeShipments = shipments.filter(ship => ship?.status === 'in_transit');
-  const totalInvoiceAmount = invoices.reduce((sum, inv) => sum + (inv?.totalAmount || 0), 0);
+  const handleRetry = () => {
+    refetchStats();
+  };
 
   if (loading) {
     return (
@@ -62,11 +66,46 @@ export default function Dashboard() {
     );
   }
 
+  if (statsError) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="text-red-500 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">حدث خطأ في تحميل البيانات</h3>
+            <p className="text-gray-600 mb-4">
+              {statsError instanceof Error ? statsError.message : 'تعذر تحميل بيانات لوحة التحكم'}
+            </p>
+            <Button onClick={handleRetry} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 md:space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">لوحة التحكم</h1>
-        <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">نظرة عامة على النظام</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">لوحة التحكم</h1>
+          <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">نظرة عامة على النظام</p>
+        </div>
+        <Button 
+          variant="outline"
+          onClick={handleRetry}
+          className="flex items-center gap-2"
+          disabled={loading}
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          تحديث
+        </Button>
       </div>
 
       {/* Stats Grid */}
@@ -77,7 +116,7 @@ export default function Dashboard() {
             <Package className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{items.length}</div>
+            <div className="text-2xl font-bold">{stats.totalItems}</div>
             <p className="text-xs text-gray-600 mt-1">صنف مسجل</p>
           </CardContent>
         </Card>
@@ -88,7 +127,7 @@ export default function Dashboard() {
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{suppliers.length}</div>
+            <div className="text-2xl font-bold">{stats.totalSuppliers}</div>
             <p className="text-xs text-gray-600 mt-1">مورد نشط</p>
           </CardContent>
         </Card>
@@ -99,7 +138,7 @@ export default function Dashboard() {
             <FileText className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{invoices.length}</div>
+            <div className="text-2xl font-bold">{stats.totalInvoices}</div>
             <p className="text-xs text-gray-600 mt-1">فاتورة</p>
           </CardContent>
         </Card>
@@ -110,7 +149,7 @@ export default function Dashboard() {
             <Ship className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeShipments.length}</div>
+            <div className="text-2xl font-bold">{stats.activeShipments}</div>
             <p className="text-xs text-gray-600 mt-1">شحنة في الطريق</p>
           </CardContent>
         </Card>
@@ -128,7 +167,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl md:text-4xl font-bold text-green-600">
-              {totalInvoiceAmount.toLocaleString('ar')} ريال
+              {formatPrice(stats.totalInvoiceAmount)}
             </div>
           </CardContent>
         </Card>
@@ -163,15 +202,15 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               {lowStockItems.slice(0, 5).map((item) => (
-                <div key={item?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-red-200 gap-2">
+                <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-red-200 gap-2">
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900">{item?.name || 'غير محدد'}</p>
-                    <p className="text-sm text-gray-500">{item?.itemNumber || 'غير محدد'}</p>
+                    <p className="font-medium text-gray-900">{item.name}</p>
+                    <p className="text-sm text-gray-500">{item.number}</p>
                   </div>
                   <div className="text-left sm:text-right">
                     <p className="text-sm text-gray-500">الكمية المتبقية</p>
                     <p className="text-lg font-bold text-red-600">
-                      {item?.quantity || 0} {item?.unit || ''}
+                      {item.quantity} {item.unit}
                     </p>
                   </div>
                 </div>
@@ -190,14 +229,14 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {invoices.slice(0, 5).map((invoice) => (
-                <div key={invoice?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
+              {recentInvoices.slice(0, 5).map((invoice) => (
+                <div key={invoice.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{invoice?.invoiceNumber || 'غير محدد'}</p>
-                    <p className="text-xs text-gray-500">{invoice?.issueDate || 'غير محدد'}</p>
+                    <p className="font-medium text-sm">{invoice.number}</p>
+                    <p className="text-xs text-gray-500">{invoice.issueDate}</p>
                   </div>
                   <p className="text-sm font-semibold text-blue-600">
-                    {(invoice?.totalAmount || 0).toLocaleString('ar')} ريال
+                    {formatPrice(invoice.totalAmount)}
                   </p>
                 </div>
               ))}
@@ -213,11 +252,11 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               {activeShipments.slice(0, 5).map((shipment) => (
-                <div key={shipment?.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
+                <div key={shipment.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{shipment?.shipmentNumber || 'غير محدد'}</p>
+                    <p className="font-medium text-sm">{shipment.containerNumber}</p>
                     <p className="text-xs text-gray-500">
-                      {shipment?.origin || 'غير محدد'} → {shipment?.destination || 'غير محدد'}
+                      {shipment.departureDate} → {shipment.arrivalDate || 'غير محدد'}
                     </p>
                   </div>
                   <div className="text-left sm:text-right">

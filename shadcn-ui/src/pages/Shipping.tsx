@@ -7,13 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Edit, Trash2, Ship, Calendar, Package, DollarSign, X } from 'lucide-react';
-import { Shipment, ShipmentItem, Item, Supplier } from '@/types';
-import { SupabaseShipmentsStorage, SupabaseItemsStorage, SupabaseSuppliersStorage } from '@/lib/supabaseStorage';
+import { Plus, Search, Edit, Trash2, Ship, Calendar, Package, DollarSign, X, RefreshCw } from 'lucide-react';
+import { useGetAllShipments, useAddShipment, useUpdateShipment, useDeleteShipment, Shipment, ShipmentItem } from '@/pages/API/ShippingAPI';
+// import { useGetAllSuppliers, Supplier } from './SuppliersAPI';
+import { useGetAllSuppliers, Supplier } from '@/pages/API/SuppliersAPI';
+import { useGetAllItems, Item } from '@/pages/API/ItemsAPI';
+import { useGetAllCurrencies } from '@/pages/API/CurrenciesAPI';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCurrency } from '@/hooks/useCurrency';
-import { formatWithBaseCurrency } from '@/lib/currencyUtils';
 
 interface ShippingProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
@@ -21,15 +22,37 @@ interface ShippingProps {
 
 export default function Shipping({ quickActionTrigger }: ShippingProps) {
   const isMobile = useIsMobile();
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  
+  // APIs
+  const { 
+    data: shipmentsData, 
+    isLoading: shipmentsLoading, 
+    error: shipmentsError, 
+    refetch: refetchShipments,
+    isError: shipmentsIsError 
+  } = useGetAllShipments();
+  
+  const { 
+    data: suppliersData, 
+    isLoading: suppliersLoading 
+  } = useGetAllSuppliers();
+  
+  const { 
+    data: itemsData, 
+    isLoading: itemsLoading 
+  } = useGetAllItems();
+  
+  const { 
+    data: currenciesData 
+  } = useGetAllCurrencies();
+
+  const addShipmentMutation = useAddShipment();
+  const updateShipmentMutation = useUpdateShipment();
+  const deleteShipmentMutation = useDeleteShipment();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const { currencies, baseCurrency } = useCurrency();
 
   const [formData, setFormData] = useState({
     containerNumber: '',
@@ -41,6 +64,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     shippingCost: '',
     customsFees: '',
     insurance: '',
+    currencyId: '',
     items: [] as ShipmentItem[]
   });
 
@@ -52,50 +76,14 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     volume: ''
   });
 
-  const formatPrice = (amount: number): string => {
-    return formatWithBaseCurrency(amount, currencies);
-  };
+  // Data
+  const shipments: Shipment[] = Array.isArray(shipmentsData) ? shipmentsData : [];
+  const suppliers: Supplier[] = Array.isArray(suppliersData) ? suppliersData : [];
+  const items: Item[] = Array.isArray(itemsData) ? itemsData : [];
+  const currencies = Array.isArray(currenciesData) ? currenciesData : [];
+  const baseCurrency = currencies.find(c => c.isBase);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [shipmentsData, itemsData, suppliersData] = await Promise.all([
-        SupabaseShipmentsStorage.getAll(),
-        SupabaseItemsStorage.getAll(),
-        SupabaseSuppliersStorage.getAll()
-      ]);
-      setShipments(shipmentsData);
-      setItems(itemsData);
-      setSuppliers(suppliersData);
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-      toast.error('فشل تحميل البيانات');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-
-    const unsubscribeShipments = SupabaseShipmentsStorage.subscribe((newShipments) => {
-      setShipments(newShipments);
-    });
-
-    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
-      setItems(newItems);
-    });
-
-    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
-      setSuppliers(newSuppliers);
-    });
-
-    return () => {
-      unsubscribeShipments();
-      unsubscribeItems();
-      unsubscribeSuppliers();
-    };
-  }, []);
+  const loading = shipmentsLoading || suppliersLoading || itemsLoading;
 
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-shipment') {
@@ -110,14 +98,19 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
 
   const getSupplierName = (supplierId: string) => {
     if (!supplierId) return 'غير محدد';
-    const supplier = suppliers.find(s => s?.id === supplierId);
+    const supplier = suppliers.find(s => s.id.toString() === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
   const getItemName = (itemId: string) => {
     if (!itemId) return 'غير محدد';
-    const item = items.find(i => i?.id === itemId);
+    const item = items.find(i => i.id.toString() === itemId);
     return item?.name || 'غير محدد';
+  };
+
+  const formatPrice = (amount: number): string => {
+    if (!baseCurrency) return amount.toString();
+    return `${amount.toLocaleString('ar')} ${baseCurrency.symbol}`;
   };
 
   const resetForm = () => {
@@ -131,6 +124,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       shippingCost: '',
       customsFees: '',
       insurance: '',
+      currencyId: baseCurrency?.id.toString() || '',
       items: []
     });
     setItemForm({
@@ -150,16 +144,17 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
   const handleEditShipment = (shipment: Shipment) => {
     setEditingShipment(shipment);
     setFormData({
-      containerNumber: shipment?.containerNumber || '',
-      billOfLading: shipment?.billOfLading || '',
-      supplierId: shipment?.supplierId || '',
-      departureDate: shipment?.departureDate || new Date().toISOString().split('T')[0],
-      arrivalDate: shipment?.arrivalDate || '',
-      status: shipment?.status || 'in_transit',
-      shippingCost: (shipment?.shippingCost || 0).toString(),
-      customsFees: (shipment?.customsFees || 0).toString(),
-      insurance: (shipment?.insurance || 0).toString(),
-      items: shipment?.items || []
+      containerNumber: shipment.containerNumber,
+      billOfLading: shipment.billOfLading,
+      supplierId: shipment.supplierId,
+      departureDate: shipment.departureDate,
+      arrivalDate: shipment.arrivalDate || '',
+      status: shipment.status,
+      shippingCost: shipment.shippingCost.toString(),
+      customsFees: shipment.customsFees.toString(),
+      insurance: shipment.insurance?.toString() || '',
+      currencyId: shipment.currencyId?.toString() || baseCurrency?.id.toString() || '',
+      items: shipment.items
     });
     setIsDialogOpen(true);
   };
@@ -170,9 +165,15 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       return;
     }
 
+    const quantity = parseInt(itemForm.quantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('يرجى إدخال كمية صحيحة');
+      return;
+    }
+
     const newItem: ShipmentItem = {
       itemId: itemForm.itemId,
-      quantity: parseInt(itemForm.quantity) || 0,
+      quantity: quantity,
       weight: itemForm.weight ? parseFloat(itemForm.weight) : undefined,
       volume: itemForm.volume ? parseFloat(itemForm.volume) : undefined
     };
@@ -201,7 +202,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
   };
 
   const handleSaveShipment = async () => {
-    if (!formData.containerNumber || !formData.billOfLading || !formData.supplierId) {
+    if (!formData.containerNumber?.trim() || !formData.billOfLading?.trim() || !formData.supplierId) {
       toast.error('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
@@ -211,51 +212,59 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       return;
     }
 
-    try {
-      const shipmentData = {
-        containerNumber: formData.containerNumber,
-        billOfLading: formData.billOfLading,
-        supplierId: formData.supplierId,
-        departureDate: formData.departureDate,
-        arrivalDate: formData.arrivalDate || null,
-        status: formData.status,
-        shippingCost: parseFloat(formData.shippingCost) || 0,
-        customsFees: parseFloat(formData.customsFees) || 0,
-        insurance: formData.insurance ? parseFloat(formData.insurance) : undefined,
-        currencyId: baseCurrency?.id || undefined,
-        items: formData.items
-      };
+    const shippingCost = parseFloat(formData.shippingCost) || 0;
+    const customsFees = parseFloat(formData.customsFees) || 0;
+    const insurance = formData.insurance ? parseFloat(formData.insurance) : undefined;
 
+    if (shippingCost < 0 || customsFees < 0 || (insurance && insurance < 0)) {
+      toast.error('يرجى إدخال قيم تكاليف صحيحة');
+      return;
+    }
+
+    const shipmentData = {
+      containerNumber: formData.containerNumber.trim(),
+      billOfLading: formData.billOfLading.trim(),
+      supplierId: formData.supplierId,
+      departureDate: formData.departureDate,
+      arrivalDate: formData.arrivalDate || undefined,
+      status: formData.status,
+      shippingCost,
+      customsFees,
+      insurance,
+      currencyId: formData.currencyId ? parseInt(formData.currencyId) : undefined,
+      items: formData.items
+    };
+
+    try {
       if (editingShipment) {
-        await SupabaseShipmentsStorage.update(editingShipment.id, shipmentData);
-        toast.success('تم تحديث الشحنة بنجاح');
+        await updateShipmentMutation.mutateAsync({ 
+          id: editingShipment.id, 
+          data: shipmentData 
+        });
       } else {
-        await SupabaseShipmentsStorage.add(shipmentData);
-        toast.success('تم إضافة الشحنة بنجاح');
+        await addShipmentMutation.mutateAsync(shipmentData);
       }
 
       setIsDialogOpen(false);
       resetForm();
+      setEditingShipment(null);
     } catch (error) {
       console.error('خطأ في حفظ الشحنة:', error);
-      toast.error('حدث خطأ أثناء حفظ الشحنة');
     }
   };
 
-  const handleDeleteShipment = async (shipmentId: string) => {
+  const handleDeleteShipment = async (shipmentId: number) => {
     if (!confirm('هل أنت متأكد من حذف هذه الشحنة؟')) return;
 
     try {
-      const result = await SupabaseShipmentsStorage.delete(shipmentId);
-      if (result.success) {
-        toast.success('تم حذف الشحنة بنجاح');
-      } else {
-        toast.error(result.message);
-      }
+      await deleteShipmentMutation.mutateAsync(shipmentId);
     } catch (error) {
       console.error('خطأ في حذف الشحنة:', error);
-      toast.error('حدث خطأ أثناء حذف الشحنة');
     }
+  };
+
+  const handleRetry = () => {
+    refetchShipments();
   };
 
   const getStatusBadge = (status: Shipment['status']) => {
@@ -270,9 +279,9 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
   };
 
   const calculateTotalCost = (shipment: Shipment) => {
-    const shipping = shipment?.shippingCost || 0;
-    const customs = shipment?.customsFees || 0;
-    const insurance = shipment?.insurance || 0;
+    const shipping = shipment.shippingCost || 0;
+    const customs = shipment.customsFees || 0;
+    const insurance = shipment.insurance || 0;
     return shipping + customs + insurance;
   };
 
@@ -287,27 +296,66 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
     );
   }
 
+  if (shipmentsIsError) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="text-red-500 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">حدث خطأ في تحميل البيانات</h3>
+            <p className="text-gray-600 mb-4">
+              {shipmentsError instanceof Error ? shipmentsError.message : 'تعذر تحميل بيانات الشحنات'}
+            </p>
+            <Button onClick={handleRetry} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">إدارة الشحن</h1>
-          <p className="text-gray-600 mt-2">إدارة جميع الشحنات والحاويات</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">إدارة الشحن</h1>
+          <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">إدارة جميع الشحنات والحاويات</p>
           {baseCurrency && (
             <p className="text-xs text-gray-500 mt-1">جميع التكاليف بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
           )}
         </div>
-        <Button onClick={handleAddShipment} className="flex items-center w-full sm:w-auto">
-          <Plus className="h-4 w-4 ml-2" />
-          إضافة شحنة جديدة
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline"
+            onClick={handleRetry}
+            className="flex items-center gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            تحديث
+          </Button>
+          <Button 
+            onClick={handleAddShipment} 
+            className="flex items-center justify-center flex-1 sm:flex-none"
+            disabled={addShipmentMutation.isLoading}
+          >
+            <Plus className="h-4 w-4 ml-2" />
+            إضافة شحنة جديدة
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>البحث والفلتر</CardTitle>
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="text-lg md:text-xl">البحث والفلتر</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 md:p-6 pt-0">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <Input
@@ -321,76 +369,80 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="flex items-center text-lg md:text-xl">
             <Ship className="h-5 w-5 ml-2" />
             قائمة الشحنات ({filteredShipments.length})
           </CardTitle>
-          <CardDescription>جميع الشحنات المسجلة في النظام</CardDescription>
+          <CardDescription className="text-sm">جميع الشحنات المسجلة في النظام</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 md:p-6">
           {isMobile ? (
-            <div className="space-y-4">
+            <div className="space-y-4 p-4">
               {filteredShipments.map((shipment) => (
-                <Card key={shipment?.id} className="border-2">
-                  <CardContent className="pt-6">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-semibold text-lg">{shipment?.containerNumber}</p>
-                          <p className="text-sm text-gray-600">{shipment?.billOfLading}</p>
-                        </div>
-                        {getStatusBadge(shipment?.status || 'in_transit')}
+                <Card key={shipment.id} className="border-2">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-lg">{shipment.containerNumber}</p>
+                        <p className="text-sm text-gray-600">{shipment.billOfLading}</p>
                       </div>
-                      
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <p className="text-gray-600">المورد</p>
-                          <p className="font-medium">{getSupplierName(shipment?.supplierId || '')}</p>
-                        </div>
+                      {getStatusBadge(shipment.status)}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-gray-600">المورد</p>
+                        <p className="font-medium">{getSupplierName(shipment.supplierId)}</p>
                       </div>
+                    </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="flex items-center">
-                          <Calendar className="h-3 w-3 ml-1" />
-                          <span>{shipment?.departureDate}</span>
-                        </div>
-                        <div className="flex items-center">
-                          <Calendar className="h-3 w-3 ml-1" />
-                          <span>{shipment?.arrivalDate || 'غير محدد'}</span>
-                        </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center">
+                        <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                        <span className="text-gray-500 ml-2">المغادرة:</span>
+                        <span className="font-medium mr-2">{shipment.departureDate}</span>
                       </div>
+                      <div className="flex items-center">
+                        <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                        <span className="text-gray-500 ml-2">الوصول:</span>
+                        <span className="font-medium mr-2">{shipment.arrivalDate || 'غير محدد'}</span>
+                      </div>
+                    </div>
 
-                      <div className="flex items-center text-sm">
-                        <DollarSign className="h-3 w-3 ml-1" />
-                        <span>التكلفة الإجمالية: {formatPrice(calculateTotalCost(shipment))}</span>
-                      </div>
+                    <div className="flex items-center text-sm">
+                      <DollarSign className="h-3 w-3 ml-1 text-gray-500" />
+                      <span className="text-gray-500 ml-2">التكلفة:</span>
+                      <span className="font-medium mr-2">{formatPrice(calculateTotalCost(shipment))}</span>
+                    </div>
 
-                      <div className="flex items-center text-sm">
-                        <Package className="h-3 w-3 ml-1" />
-                        <span>عدد الأصناف: {shipment?.items?.length || 0}</span>
-                      </div>
+                    <div className="flex items-center text-sm">
+                      <Package className="h-3 w-3 ml-1 text-gray-500" />
+                      <span className="text-gray-500 ml-2">الأصناف:</span>
+                      <span className="font-medium mr-2">{shipment.items.length}</span>
+                    </div>
 
-                      <div className="flex gap-2 pt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditShipment(shipment)}
-                          className="flex-1"
-                        >
-                          <Edit className="h-4 w-4 ml-1" />
-                          تعديل
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteShipment(shipment?.id || '')}
-                          className="flex-1 text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4 ml-1" />
-                          حذف
-                        </Button>
-                      </div>
+                    <div className="flex gap-2 pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditShipment(shipment)}
+                        className="flex-1"
+                        disabled={updateShipmentMutation.isLoading}
+                      >
+                        <Edit className="h-4 w-4 ml-1" />
+                        تعديل
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteShipment(shipment.id)}
+                        className="flex-1 text-red-600 hover:text-red-700"
+                        disabled={deleteShipmentMutation.isLoading}
+                      >
+                        <Trash2 className="h-4 w-4 ml-1" />
+                        حذف
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -414,33 +466,33 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                 </TableHeader>
                 <TableBody>
                   {filteredShipments.map((shipment) => (
-                    <TableRow key={shipment?.id}>
-                      <TableCell className="font-medium">{shipment?.containerNumber}</TableCell>
-                      <TableCell>{shipment?.billOfLading}</TableCell>
-                      <TableCell>{getSupplierName(shipment?.supplierId || '')}</TableCell>
+                    <TableRow key={shipment.id}>
+                      <TableCell className="font-medium">{shipment.containerNumber}</TableCell>
+                      <TableCell>{shipment.billOfLading}</TableCell>
+                      <TableCell>{getSupplierName(shipment.supplierId)}</TableCell>
                       <TableCell>
                         <div className="flex items-center text-sm">
-                          <Calendar className="h-3 w-3 ml-1" />
-                          {shipment?.departureDate}
+                          <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                          {shipment.departureDate}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center text-sm">
-                          <Calendar className="h-3 w-3 ml-1" />
-                          {shipment?.arrivalDate || 'غير محدد'}
+                          <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                          {shipment.arrivalDate || 'غير محدد'}
                         </div>
                       </TableCell>
-                      <TableCell>{getStatusBadge(shipment?.status || 'in_transit')}</TableCell>
+                      <TableCell>{getStatusBadge(shipment.status)}</TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <DollarSign className="h-3 w-3 ml-1" />
+                          <DollarSign className="h-3 w-3 ml-1 text-gray-500" />
                           {formatPrice(calculateTotalCost(shipment))}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <Package className="h-3 w-3 ml-1" />
-                          {shipment?.items?.length || 0}
+                          <Package className="h-3 w-3 ml-1 text-gray-500" />
+                          {shipment.items.length}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -449,14 +501,16 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                             variant="outline"
                             size="sm"
                             onClick={() => handleEditShipment(shipment)}
+                            disabled={updateShipmentMutation.isLoading}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleDeleteShipment(shipment?.id || '')}
+                            onClick={() => handleDeleteShipment(shipment.id)}
                             className="text-red-600 hover:text-red-700"
+                            disabled={deleteShipmentMutation.isLoading}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -466,6 +520,14 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {filteredShipments.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">
+                {searchTerm ? 'لا توجد شحنات تطابق البحث' : 'لا توجد شحنات مسجلة'}
+              </p>
             </div>
           )}
         </CardContent>
@@ -489,45 +551,52 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
             {/* معلومات الشحنة الأساسية */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="containerNumber">رقم الحاوية *</Label>
+                <Label htmlFor="containerNumber">رقم الحاوية <span className="text-red-600">*</span></Label>
                 <Input 
                   id="containerNumber" 
                   placeholder="أدخل رقم الحاوية"
                   value={formData.containerNumber}
                   onChange={(e) => setFormData(prev => ({...prev, containerNumber: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="billOfLading">بوليصة الشحن *</Label>
+                <Label htmlFor="billOfLading">بوليصة الشحن <span className="text-red-600">*</span></Label>
                 <Input 
                   id="billOfLading" 
                   placeholder="أدخل رقم بوليصة الشحن"
                   value={formData.billOfLading}
                   onChange={(e) => setFormData(prev => ({...prev, billOfLading: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="supplier">المورد *</Label>
-                <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
+                <Label htmlFor="supplier">المورد <span className="text-red-600">*</span></Label>
+                <Select 
+                  value={formData.supplierId} 
+                  onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="اختر المورد" />
                   </SelectTrigger>
                   <SelectContent>
                     {suppliers.map((supplier) => (
-                      <SelectItem key={supplier?.id} value={supplier?.id || ''}>
-                        {supplier?.name}
+                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                        {supplier.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="departureDate">تاريخ المغادرة *</Label>
+                <Label htmlFor="departureDate">تاريخ المغادرة <span className="text-red-600">*</span></Label>
                 <Input 
                   id="departureDate" 
                   type="date"
                   value={formData.departureDate}
                   onChange={(e) => setFormData(prev => ({...prev, departureDate: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -537,11 +606,16 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                   type="date"
                   value={formData.arrivalDate}
                   onChange={(e) => setFormData(prev => ({...prev, arrivalDate: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="status">الحالة *</Label>
-                <Select value={formData.status} onValueChange={(value: Shipment['status']) => setFormData(prev => ({...prev, status: value}))}>
+                <Label htmlFor="status">الحالة <span className="text-red-600">*</span></Label>
+                <Select 
+                  value={formData.status} 
+                  onValueChange={(value: Shipment['status']) => setFormData(prev => ({...prev, status: value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="اختر الحالة" />
                   </SelectTrigger>
@@ -559,7 +633,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="shippingCost">
-                  تكلفة الشحن {baseCurrency && `(${baseCurrency.symbol})`}
+                  تكلفة الشحن {baseCurrency && `(${baseCurrency.symbol})`} <span className="text-red-600">*</span>
                 </Label>
                 <Input 
                   id="shippingCost" 
@@ -568,11 +642,12 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                   placeholder="0.00"
                   value={formData.shippingCost}
                   onChange={(e) => setFormData(prev => ({...prev, shippingCost: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customsFees">
-                  رسوم الجمارك {baseCurrency && `(${baseCurrency.symbol})`}
+                  رسوم الجمارك {baseCurrency && `(${baseCurrency.symbol})`} <span className="text-red-600">*</span>
                 </Label>
                 <Input 
                   id="customsFees" 
@@ -581,6 +656,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                   placeholder="0.00"
                   value={formData.customsFees}
                   onChange={(e) => setFormData(prev => ({...prev, customsFees: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -594,6 +670,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                   placeholder="0.00"
                   value={formData.insurance}
                   onChange={(e) => setFormData(prev => ({...prev, insurance: e.target.value}))}
+                  disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                 />
               </div>
             </div>
@@ -604,28 +681,33 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
               
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-2">
-                  <Label htmlFor="itemId">الصنف</Label>
-                  <Select value={itemForm.itemId} onValueChange={(value) => setItemForm(prev => ({...prev, itemId: value}))}>
+                  <Label htmlFor="itemId">الصنف <span className="text-red-600">*</span></Label>
+                  <Select 
+                    value={itemForm.itemId} 
+                    onValueChange={(value) => setItemForm(prev => ({...prev, itemId: value}))}
+                    disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="اختر الصنف" />
                     </SelectTrigger>
                     <SelectContent>
                       {items.map((item) => (
-                        <SelectItem key={item?.id} value={item?.id || ''}>
-                          {item?.name}
+                        <SelectItem key={item.id} value={item.id.toString()}>
+                          {item.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="quantity">الكمية</Label>
+                  <Label htmlFor="quantity">الكمية <span className="text-red-600">*</span></Label>
                   <Input 
                     id="quantity" 
                     type="number"
                     placeholder="0"
                     value={itemForm.quantity}
                     onChange={(e) => setItemForm(prev => ({...prev, quantity: e.target.value}))}
+                    disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -637,6 +719,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                     placeholder="0.00"
                     value={itemForm.weight}
                     onChange={(e) => setItemForm(prev => ({...prev, weight: e.target.value}))}
+                    disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -648,6 +731,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                     placeholder="0.00"
                     value={itemForm.volume}
                     onChange={(e) => setItemForm(prev => ({...prev, volume: e.target.value}))}
+                    disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                   />
                 </div>
               </div>
@@ -657,6 +741,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                 variant="outline" 
                 onClick={handleAddItemToShipment}
                 className="w-full md:w-auto"
+                disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
               >
                 <Plus className="h-4 w-4 ml-2" />
                 إضافة الصنف
@@ -682,6 +767,7 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
                         size="sm"
                         onClick={() => handleRemoveItemFromShipment(index)}
                         className="text-red-600 hover:text-red-700"
+                        disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -692,12 +778,28 @@ export default function Shipping({ quickActionTrigger }: ShippingProps) {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDialogOpen(false)}
+              className="w-full sm:w-auto"
+              disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
+            >
               إلغاء
             </Button>
-            <Button onClick={handleSaveShipment}>
-              {editingShipment ? 'حفظ التعديل' : 'إضافة الشحنة'}
+            <Button 
+              onClick={handleSaveShipment}
+              className="w-full sm:w-auto"
+              disabled={addShipmentMutation.isLoading || updateShipmentMutation.isLoading}
+            >
+              {addShipmentMutation.isLoading || updateShipmentMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {editingShipment ? 'جاري التحديث...' : 'جاري الإضافة...'}
+                </>
+              ) : (
+                editingShipment ? 'حفظ التعديل' : 'إضافة الشحنة'
+              )}
             </Button>
           </div>
         </DialogContent>

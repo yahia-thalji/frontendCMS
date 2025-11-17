@@ -8,36 +8,57 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Edit, Trash2, FileText, Calendar, X } from 'lucide-react';
-import { Invoice, InvoiceItem, Supplier, Item } from '@/types';
-import { generateInvoiceNumber } from '@/lib/autoNumber';
-import { SupabaseInvoicesStorage, SupabaseSuppliersStorage, SupabaseItemsStorage } from '@/lib/supabaseStorage';
+import { Plus, Search, Edit, Trash2, FileText, Calendar, X, RefreshCw } from 'lucide-react';
+import { useGetAllInvoices, useAddInvoice, useUpdateInvoice, useDeleteInvoice, Invoice, InvoiceItem } from '@/pages/API/InvoicesAPI';
+import { useGetAllSuppliers, Supplier } from '@/pages/API/SuppliersAPI';
+import { useGetAllItems, Item } from '@/pages/API/ItemsAPI';
+import { useGetAllCurrencies } from '@/pages/API/CurrenciesAPI';
 import { toast } from 'sonner';
-import { useCurrency } from '@/hooks/useCurrency';
-import { formatWithBaseCurrency } from '@/lib/currencyUtils';
 
 interface InvoicesProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
 }
 
 export default function Invoices({ quickActionTrigger }: InvoicesProps) {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  // APIs
+  const { 
+    data: invoicesData, 
+    isLoading: invoicesLoading, 
+    error: invoicesError, 
+    refetch: refetchInvoices,
+    isError: invoicesIsError 
+  } = useGetAllInvoices();
+  
+  const { 
+    data: suppliersData, 
+    isLoading: suppliersLoading 
+  } = useGetAllSuppliers();
+  
+  const { 
+    data: itemsData, 
+    isLoading: itemsLoading 
+  } = useGetAllItems();
+  
+  const { 
+    data: currenciesData 
+  } = useGetAllCurrencies();
+
+  const addInvoiceMutation = useAddInvoice();
+  const updateInvoiceMutation = useUpdateInvoice();
+  const deleteInvoiceMutation = useDeleteInvoice();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const { currencies, baseCurrency } = useCurrency();
 
   const [formData, setFormData] = useState({
-    invoiceNumber: '',
+    number: '',
     supplierId: '',
     issueDate: new Date().toISOString().split('T')[0],
     dueDate: '',
     status: 'pending' as Invoice['status'],
     notes: '',
+    currencyId: '',
     items: [] as InvoiceItem[]
   });
 
@@ -47,50 +68,14 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     unitPrice: ''
   });
 
-  const formatPrice = (amount: number): string => {
-    return formatWithBaseCurrency(amount, currencies);
-  };
+  // Data
+  const invoices: Invoice[] = Array.isArray(invoicesData) ? invoicesData : [];
+  const suppliers: Supplier[] = Array.isArray(suppliersData) ? suppliersData : [];
+  const items: Item[] = Array.isArray(itemsData) ? itemsData : [];
+  const currencies = Array.isArray(currenciesData) ? currenciesData : [];
+  const baseCurrency = currencies.find(c => c.isBase);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [invoicesData, suppliersData, itemsData] = await Promise.all([
-        SupabaseInvoicesStorage.getAll(),
-        SupabaseSuppliersStorage.getAll(),
-        SupabaseItemsStorage.getAll()
-      ]);
-      setInvoices(invoicesData);
-      setSuppliers(suppliersData);
-      setItems(itemsData);
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-      toast.error('حدث خطأ أثناء تحميل البيانات');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-
-    const unsubscribeInvoices = SupabaseInvoicesStorage.subscribe((newInvoices) => {
-      setInvoices(newInvoices);
-    });
-
-    const unsubscribeSuppliers = SupabaseSuppliersStorage.subscribe((newSuppliers) => {
-      setSuppliers(newSuppliers);
-    });
-
-    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
-      setItems(newItems);
-    });
-
-    return () => {
-      unsubscribeInvoices();
-      unsubscribeSuppliers();
-      unsubscribeItems();
-    };
-  }, []);
+  const loading = invoicesLoading || suppliersLoading || itemsLoading;
 
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-invoice') {
@@ -99,43 +84,50 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   }, [quickActionTrigger]);
 
   const filteredInvoices = invoices.filter(invoice =>
-    invoice?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    invoice?.number?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getSupplierName = (supplierId: string) => {
     if (!supplierId) return 'غير محدد';
-    const supplier = suppliers.find(s => s?.id === supplierId);
+    const supplier = suppliers.find(s => s.id.toString() === supplierId);
     return supplier?.name || 'غير محدد';
   };
 
   const getItemName = (itemId: string) => {
     if (!itemId) return 'غير محدد';
-    const item = items.find(i => i?.id === itemId);
+    const item = items.find(i => i.id.toString() === itemId);
     return item?.name || 'غير محدد';
+  };
+
+  const formatPrice = (amount: number): string => {
+    if (!baseCurrency) return amount.toString();
+    return `${amount.toLocaleString('ar')} ${baseCurrency.symbol}`;
   };
 
   const resetForm = () => {
     const today = new Date().toISOString().split('T')[0];
     
     setFormData({
-      invoiceNumber: '',
+      number: '',
       supplierId: '',
       issueDate: today,
       dueDate: '',
       status: 'pending',
       notes: '',
+      currencyId: baseCurrency?.id.toString() || '',
       items: []
     });
     setCurrentItem({ itemId: '', quantity: '', unitPrice: '' });
   };
 
-  const handleAddInvoice = async () => {
+  const handleAddInvoice = () => {
     setEditingInvoice(null);
     resetForm();
-    const invoiceNumber = await generateInvoiceNumber();
+    // توليد رقم فاتورة تلقائي (يمكن استبداله بدالة توليد أرقام)
+    const invoiceNumber = `INV-${Date.now()}`;
     setFormData(prev => ({
       ...prev,
-      invoiceNumber
+      number: invoiceNumber
     }));
     setIsDialogOpen(true);
   };
@@ -143,13 +135,14 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
   const handleEditInvoice = (invoice: Invoice) => {
     setEditingInvoice(invoice);
     setFormData({
-      invoiceNumber: invoice?.invoiceNumber || '',
-      supplierId: invoice?.supplierId || '',
-      issueDate: invoice?.issueDate || new Date().toISOString().split('T')[0],
-      dueDate: invoice?.dueDate || '',
-      status: invoice?.status || 'pending',
-      notes: invoice?.notes || '',
-      items: invoice?.items || []
+      number: invoice.number,
+      supplierId: invoice.supplierId,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate || '',
+      status: invoice.status,
+      notes: invoice.notes || '',
+      currencyId: invoice.currencyId?.toString() || baseCurrency?.id.toString() || '',
+      items: invoice.items
     });
     setIsDialogOpen(true);
   };
@@ -162,6 +155,17 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
 
     const quantity = parseInt(currentItem.quantity);
     const unitPrice = parseFloat(currentItem.unitPrice);
+
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('يرجى إدخال كمية صحيحة');
+      return;
+    }
+
+    if (isNaN(unitPrice) || unitPrice < 0) {
+      toast.error('يرجى إدخال سعر صحيح');
+      return;
+    }
+
     const total = quantity * unitPrice;
 
     const newItem: InvoiceItem = {
@@ -203,51 +207,50 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
       return;
     }
 
+    const totalAmount = calculateTotalAmount();
+
+    const invoiceData = {
+      number: formData.number,
+      supplierId: formData.supplierId,
+      issueDate: formData.issueDate,
+      dueDate: formData.dueDate || undefined,
+      totalAmount,
+      status: formData.status,
+      notes: formData.notes || undefined,
+      currencyId: formData.currencyId ? parseInt(formData.currencyId) : undefined,
+      items: formData.items
+    };
+
     try {
-      const totalAmount = calculateTotalAmount();
-
-      const invoiceData = {
-        invoiceNumber: formData.invoiceNumber,
-        supplierId: formData.supplierId,
-        issueDate: formData.issueDate,
-        dueDate: formData.dueDate || undefined,
-        totalAmount,
-        currencyId: baseCurrency?.id || undefined,
-        status: formData.status,
-        notes: formData.notes || undefined,
-        items: formData.items
-      };
-
       if (editingInvoice) {
-        await SupabaseInvoicesStorage.update(editingInvoice.id, invoiceData);
-        toast.success('تم تحديث الفاتورة بنجاح');
+        await updateInvoiceMutation.mutateAsync({ 
+          id: editingInvoice.id, 
+          data: invoiceData 
+        });
       } else {
-        await SupabaseInvoicesStorage.add(invoiceData);
-        toast.success('تم إضافة الفاتورة بنجاح');
+        await addInvoiceMutation.mutateAsync(invoiceData);
       }
 
       setIsDialogOpen(false);
       resetForm();
+      setEditingInvoice(null);
     } catch (error) {
       console.error('خطأ في حفظ الفاتورة:', error);
-      toast.error('حدث خطأ أثناء حفظ الفاتورة');
     }
   };
 
-  const handleDeleteInvoice = async (invoiceId: string) => {
+  const handleDeleteInvoice = async (invoiceId: number) => {
     if (confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) {
       try {
-        const result = await SupabaseInvoicesStorage.delete(invoiceId);
-        if (result.success) {
-          toast.success('تم حذف الفاتورة بنجاح');
-        } else {
-          toast.error(result.message);
-        }
+        await deleteInvoiceMutation.mutateAsync(invoiceId);
       } catch (error) {
         console.error('خطأ في حذف الفاتورة:', error);
-        toast.error('حدث خطأ أثناء حذف الفاتورة');
       }
     }
+  };
+
+  const handleRetry = () => {
+    refetchInvoices();
   };
 
   const getStatusBadge = (status: Invoice['status']) => {
@@ -271,108 +274,157 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
     );
   }
 
+  if (invoicesIsError) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="text-red-500 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">حدث خطأ في تحميل البيانات</h3>
+            <p className="text-gray-600 mb-4">
+              {invoicesError instanceof Error ? invoicesError.message : 'تعذر تحميل بيانات الفواتير'}
+            </p>
+            <Button onClick={handleRetry} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">إدارة الفواتير</h1>
-          <p className="text-gray-600 mt-2">إدارة جميع فواتير الشراء والمدفوعات</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">إدارة الفواتير</h1>
+          <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">إدارة جميع فواتير الشراء والمدفوعات</p>
           {baseCurrency && (
             <p className="text-xs text-gray-500 mt-1">جميع المبالغ بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
           )}
         </div>
-        <Button onClick={handleAddInvoice} className="flex items-center">
-          <Plus className="h-4 w-4 ml-2" />
-          إضافة فاتورة جديدة
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline"
+            onClick={handleRetry}
+            className="flex items-center gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            تحديث
+          </Button>
+          <Button 
+            onClick={handleAddInvoice} 
+            className="flex items-center justify-center flex-1 sm:flex-none"
+            disabled={addInvoiceMutation.isLoading}
+          >
+            <Plus className="h-4 w-4 ml-2" />
+            إضافة فاتورة جديدة
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>البحث والفلتر</CardTitle>
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="text-lg md:text-xl">البحث والفلتر</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex space-x-4 space-x-reverse">
-            <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="البحث برقم الفاتورة..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pr-10"
-              />
-            </div>
+        <CardContent className="p-4 md:p-6 pt-0">
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="البحث برقم الفاتورة..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pr-10"
+            />
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="flex items-center text-lg md:text-xl">
             <FileText className="h-5 w-5 ml-2" />
             قائمة الفواتير ({filteredInvoices.length})
           </CardTitle>
-          <CardDescription>جميع الفواتير المسجلة في النظام</CardDescription>
+          <CardDescription className="text-sm">جميع الفواتير المسجلة في النظام</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>رقم الفاتورة</TableHead>
-                <TableHead>المورد</TableHead>
-                <TableHead>عدد الأصناف</TableHead>
-                <TableHead>المبلغ الإجمالي</TableHead>
-                <TableHead>تاريخ الإصدار</TableHead>
-                <TableHead>تاريخ الاستحقاق</TableHead>
-                <TableHead>الحالة</TableHead>
-                <TableHead>الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredInvoices.map((invoice) => (
-                <TableRow key={invoice?.id}>
-                  <TableCell className="font-medium">{invoice?.invoiceNumber || 'غير محدد'}</TableCell>
-                  <TableCell>{getSupplierName(invoice?.supplierId || '')}</TableCell>
-                  <TableCell>{invoice?.items?.length || 0} صنف</TableCell>
-                  <TableCell className="font-semibold">
-                    {formatPrice(invoice?.totalAmount || 0)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center text-sm">
-                      <Calendar className="h-3 w-3 ml-1" />
-                      {invoice?.issueDate || 'غير محدد'}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center text-sm">
-                      <Calendar className="h-3 w-3 ml-1" />
-                      {invoice?.dueDate || 'غير محدد'}
-                    </div>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(invoice?.status || 'pending')}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2 space-x-reverse">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditInvoice(invoice)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteInvoice(invoice?.id || '')}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+        <CardContent className="p-0 md:p-6">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>رقم الفاتورة</TableHead>
+                  <TableHead>المورد</TableHead>
+                  <TableHead>عدد الأصناف</TableHead>
+                  <TableHead>المبلغ الإجمالي</TableHead>
+                  <TableHead>تاريخ الإصدار</TableHead>
+                  <TableHead>تاريخ الاستحقاق</TableHead>
+                  <TableHead>الحالة</TableHead>
+                  <TableHead>الإجراءات</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredInvoices.map((invoice) => (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="font-medium">{invoice.number}</TableCell>
+                    <TableCell>{getSupplierName(invoice.supplierId)}</TableCell>
+                    <TableCell>{invoice.items.length} صنف</TableCell>
+                    <TableCell className="font-semibold">
+                      {formatPrice(invoice.totalAmount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center text-sm">
+                        <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                        {invoice.issueDate}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center text-sm">
+                        <Calendar className="h-3 w-3 ml-1 text-gray-500" />
+                        {invoice.dueDate || 'غير محدد'}
+                      </div>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2 space-x-reverse">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditInvoice(invoice)}
+                          disabled={updateInvoiceMutation.isLoading}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteInvoice(invoice.id)}
+                          className="text-red-600 hover:text-red-700"
+                          disabled={deleteInvoiceMutation.isLoading}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {filteredInvoices.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">
+                {searchTerm ? 'لا توجد فواتير تطابق البحث' : 'لا توجد فواتير مسجلة'}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -392,38 +444,43 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
 
           <div className="space-y-6">
             {/* معلومات الفاتورة الأساسية */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="invoiceNumber">رقم الفاتورة</Label>
+                <Label htmlFor="number">رقم الفاتورة</Label>
                 <Input 
-                  id="invoiceNumber" 
-                  value={formData.invoiceNumber}
+                  id="number" 
+                  value={formData.number}
                   disabled
                   className="bg-gray-50"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="supplier">المورد *</Label>
-                <Select value={formData.supplierId} onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}>
+                <Label htmlFor="supplier">المورد <span className="text-red-600">*</span></Label>
+                <Select 
+                  value={formData.supplierId} 
+                  onValueChange={(value) => setFormData(prev => ({...prev, supplierId: value}))}
+                  disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="اختر المورد" />
                   </SelectTrigger>
                   <SelectContent>
                     {suppliers.map((supplier) => (
-                      <SelectItem key={supplier?.id} value={supplier?.id || ''}>
-                        {supplier?.name || 'غير محدد'}
+                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                        {supplier.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="issueDate">تاريخ الإصدار *</Label>
+                <Label htmlFor="issueDate">تاريخ الإصدار <span className="text-red-600">*</span></Label>
                 <Input 
                   id="issueDate" 
                   type="date"
                   value={formData.issueDate}
                   onChange={(e) => setFormData(prev => ({...prev, issueDate: e.target.value}))}
+                  disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -433,11 +490,16 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                   type="date"
                   value={formData.dueDate}
                   onChange={(e) => setFormData(prev => ({...prev, dueDate: e.target.value}))}
+                  disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="status">الحالة *</Label>
-                <Select value={formData.status} onValueChange={(value: Invoice['status']) => setFormData(prev => ({...prev, status: value}))}>
+                <Label htmlFor="status">الحالة <span className="text-red-600">*</span></Label>
+                <Select 
+                  value={formData.status} 
+                  onValueChange={(value: Invoice['status']) => setFormData(prev => ({...prev, status: value}))}
+                  disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="اختر الحالة" />
                   </SelectTrigger>
@@ -458,6 +520,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                 value={formData.notes}
                 onChange={(e) => setFormData(prev => ({...prev, notes: e.target.value}))}
                 rows={3}
+                disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
               />
             </div>
 
@@ -465,47 +528,58 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
             <div className="border-t pt-4">
               <h3 className="text-lg font-semibold mb-4">الأصناف</h3>
               
-              <div className="grid grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-2">
-                  <Label htmlFor="itemId">الصنف *</Label>
-                  <Select value={currentItem.itemId} onValueChange={(value) => setCurrentItem(prev => ({...prev, itemId: value}))}>
+                  <Label htmlFor="itemId">الصنف <span className="text-red-600">*</span></Label>
+                  <Select 
+                    value={currentItem.itemId} 
+                    onValueChange={(value) => setCurrentItem(prev => ({...prev, itemId: value}))}
+                    disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="اختر الصنف" />
                     </SelectTrigger>
                     <SelectContent>
                       {items.map((item) => (
-                        <SelectItem key={item?.id} value={item?.id || ''}>
-                          {item?.name || 'غير محدد'}
+                        <SelectItem key={item.id} value={item.id.toString()}>
+                          {item.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="quantity">الكمية *</Label>
+                  <Label htmlFor="quantity">الكمية <span className="text-red-600">*</span></Label>
                   <Input 
                     id="quantity" 
                     type="number"
                     placeholder="الكمية"
                     value={currentItem.quantity}
                     onChange={(e) => setCurrentItem(prev => ({...prev, quantity: e.target.value}))}
+                    disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unitPrice">
-                    سعر الوحدة * {baseCurrency && `(${baseCurrency.symbol})`}
+                    سعر الوحدة <span className="text-red-600">*</span> {baseCurrency && `(${baseCurrency.symbol})`}
                   </Label>
                   <Input 
                     id="unitPrice" 
                     type="number"
+                    step="0.01"
                     placeholder="السعر"
                     value={currentItem.unitPrice}
                     onChange={(e) => setCurrentItem(prev => ({...prev, unitPrice: e.target.value}))}
+                    disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>&nbsp;</Label>
-                  <Button onClick={handleAddItemToInvoice} className="w-full">
+                  <Button 
+                    onClick={handleAddItemToInvoice} 
+                    className="w-full"
+                    disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+                  >
                     <Plus className="h-4 w-4 ml-2" />
                     إضافة
                   </Button>
@@ -538,6 +612,7 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
                               size="sm"
                               onClick={() => handleRemoveItemFromInvoice(index)}
                               className="text-red-600 hover:text-red-700"
+                              disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
                             >
                               <X className="h-4 w-4" />
                             </Button>
@@ -555,12 +630,28 @@ export default function Invoices({ quickActionTrigger }: InvoicesProps) {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 space-x-reverse mt-6">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDialogOpen(false)}
+              className="w-full sm:w-auto"
+              disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+            >
               إلغاء
             </Button>
-            <Button onClick={handleSaveInvoice}>
-              {editingInvoice ? 'حفظ التعديل' : 'إضافة الفاتورة'}
+            <Button 
+              onClick={handleSaveInvoice}
+              className="w-full sm:w-auto"
+              disabled={addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading}
+            >
+              {addInvoiceMutation.isLoading || updateInvoiceMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {editingInvoice ? 'جاري التحديث...' : 'جاري الإضافة...'}
+                </>
+              ) : (
+                editingInvoice ? 'حفظ التعديل' : 'إضافة الفاتورة'
+              )}
             </Button>
           </div>
         </DialogContent>

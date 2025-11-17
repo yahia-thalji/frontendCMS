@@ -10,62 +10,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, Search, Edit, Trash2, MapPin, Warehouse, Archive, AlertTriangle } from 'lucide-react';
-import { Location } from '@/types';
-import { generateLocationNumber } from '@/lib/autoNumber';
-import { SupabaseLocationsStorage } from '@/lib/supabaseStorage';
+import { Plus, Search, Edit, Trash2, MapPin, Warehouse, Archive, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useGetAllLocations, useAddLocation, useUpdateLocation, useDeleteLocation, Location } from '@/pages/API/LocationsAPI';
+import { toast } from 'sonner';
 
 interface LocationsProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
 }
 
 export default function Locations({ quickActionTrigger }: LocationsProps) {
-  const [locations, setLocations] = useState<Location[]>([]);
+  const { 
+    data: locationsData, 
+    isLoading, 
+    error, 
+    refetch,
+    isError 
+  } = useGetAllLocations();
+  
+  const addLocationMutation = useAddLocation();
+  const updateLocationMutation = useUpdateLocation();
+  const deleteLocationMutation = useDeleteLocation();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
-  const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [locationToDelete, setLocationToDelete] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<{
-    message: string;
-    relatedEntities?: Array<{ type: string; count: number; items: string[] }>;
-  } | null>(null);
+  const [locationToDelete, setLocationToDelete] = useState<number | null>(null);
 
   const [formData, setFormData] = useState({
-    locationNumber: '',
+    number: '',
     name: '',
-    type: '' as Location['type'] | '',
+    type: '',
     capacity: '',
     currentUsage: '',
     address: ''
   });
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const data = await SupabaseLocationsStorage.getAll();
-      setLocations(data);
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const locations: Location[] = Array.isArray(locationsData) ? locationsData : [];
 
-  useEffect(() => {
-    loadData();
-
-    const unsubscribe = SupabaseLocationsStorage.subscribe((newLocations) => {
-      setLocations(newLocations);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  // Handle quick action trigger
   useEffect(() => {
     if (quickActionTrigger?.action === 'add-location') {
       handleAddLocation();
@@ -73,10 +55,11 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
   }, [quickActionTrigger]);
 
   const filteredLocations = locations.filter(location =>
-    location?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    location?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    location?.number?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getLocationIcon = (type: Location['type']) => {
+  const getLocationIcon = (type: string) => {
     switch (type) {
       case 'warehouse':
         return Warehouse;
@@ -89,16 +72,17 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
     }
   };
 
-  const getTypeLabel = (type: Location['type']) => {
-    const labels = {
+  const getTypeLabel = (type: string) => {
+    const labels: { [key: string]: string } = {
       warehouse: 'مخزن',
       shelf: 'رف',
       section: 'قسم',
     };
-    return labels[type];
+    return labels[type] || type;
   };
 
   const getCapacityPercentage = (current: number, capacity: number) => {
+    if (capacity === 0) return 0;
     return Math.round((current / capacity) * 100);
   };
 
@@ -110,7 +94,7 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
 
   const resetForm = () => {
     setFormData({
-      locationNumber: '',
+      number: '',
       name: '',
       type: '',
       capacity: '',
@@ -119,13 +103,14 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
     });
   };
 
-  const handleAddLocation = async () => {
+  const handleAddLocation = () => {
     setEditingLocation(null);
     resetForm();
-    const locationNumber = await generateLocationNumber();
+    // توليد رقم موقع تلقائي (يمكن استبداله بدالة توليد أرقام)
+    const locationNumber = `LOC-${Date.now()}`;
     setFormData(prev => ({
       ...prev,
-      locationNumber
+      number: locationNumber
     }));
     setIsDialogOpen(true);
   };
@@ -133,49 +118,64 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
   const handleEditLocation = (location: Location) => {
     setEditingLocation(location);
     setFormData({
-      locationNumber: location?.locationNumber || '',
-      name: location?.name || '',
-      type: location?.type || 'warehouse',
-      capacity: (location?.capacity || 0).toString(),
-      currentUsage: (location?.currentUsage || 0).toString(),
-      address: location?.address || ''
+      number: location.number,
+      name: location.name,
+      type: location.type,
+      capacity: location.capacity.toString(),
+      currentUsage: location.currentUsage.toString(),
+      address: location.address || ''
     });
     setIsDialogOpen(true);
   };
 
   const handleSaveLocation = async () => {
     if (!formData.name || !formData.type || !formData.capacity) {
-      alert('يرجى ملء جميع الحقول المطلوبة');
+      toast.error('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    try {
-      const locationData = {
-        locationNumber: formData.locationNumber,
-        name: formData.name,
-        type: formData.type as Location['type'],
-        capacity: parseInt(formData.capacity) || 0,
-        currentUsage: parseInt(formData.currentUsage) || 0,
-        address: formData.address
-      };
+    const capacity = parseInt(formData.capacity);
+    const currentUsage = parseInt(formData.currentUsage) || 0;
 
+    if (isNaN(capacity) || capacity < 0) {
+      toast.error('يرجى إدخال سعة صحيحة');
+      return;
+    }
+
+    if (currentUsage > capacity) {
+      toast.error('لا يمكن أن يكون المخزون الحالي أكبر من السعة القصوى');
+      return;
+    }
+
+    const locationData = {
+      number: formData.number,
+      name: formData.name,
+      type: formData.type,
+      capacity,
+      currentUsage,
+      address: formData.address
+    };
+
+    try {
       if (editingLocation) {
-        await SupabaseLocationsStorage.update(editingLocation.id, locationData);
+        await updateLocationMutation.mutateAsync({ 
+          id: editingLocation.id, 
+          data: locationData 
+        });
       } else {
-        await SupabaseLocationsStorage.add(locationData);
+        await addLocationMutation.mutateAsync(locationData);
       }
 
       setIsDialogOpen(false);
       resetForm();
+      setEditingLocation(null);
     } catch (error) {
       console.error('خطأ في حفظ الموقع:', error);
-      alert('حدث خطأ أثناء حفظ الموقع');
     }
   };
 
-  const handleDeleteLocation = async (locationId: string) => {
+  const handleDeleteLocation = (locationId: number) => {
     setLocationToDelete(locationId);
-    setDeleteError(null);
     setDeleteDialogOpen(true);
   };
 
@@ -183,31 +183,23 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
     if (!locationToDelete) return;
 
     try {
-      const result = await SupabaseLocationsStorage.delete(locationToDelete);
-      
-      if (result.success) {
-        setDeleteDialogOpen(false);
-        setLocationToDelete(null);
-        setDeleteError(null);
-      } else {
-        setDeleteError({
-          message: result.message,
-          relatedEntities: result.relatedEntities
-        });
-      }
+      await deleteLocationMutation.mutateAsync(locationToDelete);
+      setDeleteDialogOpen(false);
+      setLocationToDelete(null);
     } catch (error) {
       console.error('خطأ في حذف الموقع:', error);
-      setDeleteError({
-        message: 'حدث خطأ أثناء حذف الموقع'
-      });
     }
   };
 
-  const totalCapacity = locations.reduce((sum, location) => sum + (location?.capacity || 0), 0);
-  const totalUsed = locations.reduce((sum, location) => sum + (location?.currentUsage || 0), 0);
+  const handleRetry = () => {
+    refetch();
+  };
+
+  const totalCapacity = locations.reduce((sum, location) => sum + location.capacity, 0);
+  const totalUsed = locations.reduce((sum, location) => sum + location.currentUsage, 0);
   const utilizationRate = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-96">
         <div className="text-center">
@@ -218,17 +210,56 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
     );
   }
 
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="text-red-500 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">حدث خطأ في تحميل البيانات</h3>
+            <p className="text-gray-600 mb-4">
+              {error instanceof Error ? error.message : 'تعذر تحميل بيانات المواقع'}
+            </p>
+            <Button onClick={handleRetry} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">إدارة مواقع التخزين</h1>
-          <p className="text-gray-600 mt-2">إدارة جميع مواقع التخزين والمخازن</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">إدارة مواقع التخزين</h1>
+          <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">إدارة جميع مواقع التخزين والمخازن</p>
         </div>
-        <Button onClick={handleAddLocation} className="flex items-center">
-          <Plus className="h-4 w-4 ml-2" />
-          إضافة موقع جديد
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline"
+            onClick={handleRetry}
+            className="flex items-center gap-2"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            تحديث
+          </Button>
+          <Button 
+            onClick={handleAddLocation} 
+            className="flex items-center justify-center flex-1 sm:flex-none"
+            disabled={addLocationMutation.isLoading}
+          >
+            <Plus className="h-4 w-4 ml-2" />
+            إضافة موقع جديد
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -278,104 +309,199 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>البحث والفلتر</CardTitle>
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="text-lg md:text-xl">البحث والفلتر</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex space-x-4 space-x-reverse">
-            <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="البحث باسم الموقع..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pr-10"
-              />
-            </div>
+        <CardContent className="p-4 md:p-6 pt-0">
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="البحث باسم الموقع أو الرقم..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pr-10"
+            />
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
+        <CardHeader className="p-4 md:p-6">
+          <CardTitle className="flex items-center text-lg md:text-xl">
             <MapPin className="h-5 w-5 ml-2" />
             قائمة المواقع ({filteredLocations.length})
           </CardTitle>
-          <CardDescription>جميع مواقع التخزين المسجلة في النظام</CardDescription>
+          <CardDescription className="text-sm">جميع مواقع التخزين المسجلة في النظام</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>رقم الموقع</TableHead>
-                <TableHead>اسم الموقع</TableHead>
-                <TableHead>النوع</TableHead>
-                <TableHead>السعة</TableHead>
-                <TableHead>المخزون الحالي</TableHead>
-                <TableHead>معدل الاستخدام</TableHead>
-                <TableHead>الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredLocations.map((location) => {
-                const Icon = getLocationIcon(location?.type || 'warehouse');
-                const percentage = getCapacityPercentage(location?.currentUsage || 0, location?.capacity || 1);
-                const colorClass = getCapacityColor(percentage);
-                
-                return (
-                  <TableRow key={location?.id}>
-                    <TableCell className="font-medium">{location?.locationNumber || 'غير محدد'}</TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center">
-                        <Icon className="h-4 w-4 ml-2 text-gray-500" />
-                        {location?.name || 'غير محدد'}
+        <CardContent className="p-0 md:p-6">
+          <div className="hidden md:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>رقم الموقع</TableHead>
+                  <TableHead>اسم الموقع</TableHead>
+                  <TableHead>النوع</TableHead>
+                  <TableHead>السعة</TableHead>
+                  <TableHead>المخزون الحالي</TableHead>
+                  <TableHead>معدل الاستخدام</TableHead>
+                  <TableHead>الإجراءات</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredLocations.map((location) => {
+                  const Icon = getLocationIcon(location.type);
+                  const percentage = getCapacityPercentage(location.currentUsage, location.capacity);
+                  const colorClass = getCapacityColor(percentage);
+                  
+                  return (
+                    <TableRow key={location.id}>
+                      <TableCell className="font-medium">{location.number}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center">
+                          <Icon className="h-4 w-4 ml-2 text-gray-500" />
+                          {location.name}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getTypeLabel(location.type)}</Badge>
+                      </TableCell>
+                      <TableCell>{location.capacity.toLocaleString('ar')}</TableCell>
+                      <TableCell className={colorClass}>
+                        {location.currentUsage.toLocaleString('ar')}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                          <Progress value={percentage} className="w-16" />
+                          <span className={`text-sm font-medium ${colorClass}`}>
+                            {percentage}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2 space-x-reverse">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditLocation(location)}
+                            disabled={updateLocationMutation.isLoading}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteLocation(location.id)}
+                            className="text-red-600 hover:text-red-700"
+                            disabled={deleteLocationMutation.isLoading}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-4 p-4">
+            {filteredLocations.map((location) => {
+              const Icon = getLocationIcon(location.type);
+              const percentage = getCapacityPercentage(location.currentUsage, location.capacity);
+              const colorClass = getCapacityColor(percentage);
+              
+              return (
+                <Card key={location.id} className="overflow-hidden">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg">{location.name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {location.number}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {getTypeLabel(location.type)}
+                          </Badge>
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{getTypeLabel(location?.type || 'warehouse')}</Badge>
-                    </TableCell>
-                    <TableCell>{(location?.capacity || 0).toLocaleString('ar')}</TableCell>
-                    <TableCell className={colorClass}>
-                      {(location?.currentUsage || 0).toLocaleString('ar')}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <Progress value={percentage} className="w-16" />
+                      <Icon className="h-5 w-5 text-gray-500" />
+                    </div>
+                    
+                    <div className="pt-2 border-t">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-500">السعة:</span>
+                          <p className="font-medium">{location.capacity.toLocaleString('ar')}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">المستخدم:</span>
+                          <p className={`font-medium ${colorClass}`}>
+                            {location.currentUsage.toLocaleString('ar')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t">
+                      <span className="text-sm text-gray-500">معدل الاستخدام:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Progress value={percentage} className="flex-1" />
                         <span className={`text-sm font-medium ${colorClass}`}>
                           {percentage}%
                         </span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2 space-x-reverse">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditLocation(location)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteLocation(location?.id || '')}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                    </div>
+
+                    {location.address && (
+                      <div className="pt-2 border-t">
+                        <span className="text-sm text-gray-500">العنوان:</span>
+                        <p className="text-sm mt-1">{location.address}</p>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                    )}
+
+                    <div className="flex gap-2 pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditLocation(location)}
+                        className="flex-1"
+                        disabled={updateLocationMutation.isLoading}
+                      >
+                        <Edit className="h-4 w-4 ml-1" />
+                        تعديل
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteLocation(location.id)}
+                        className="flex-1 text-red-600 hover:text-red-700"
+                        disabled={deleteLocationMutation.isLoading}
+                      >
+                        <Trash2 className="h-4 w-4 ml-1" />
+                        حذف
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {filteredLocations.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">
+                {searchTerm ? 'لا توجد مواقع تطابق البحث' : 'لا توجد مواقع مسجلة'}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingLocation ? 'تعديل الموقع' : 'إضافة موقع جديد'}
@@ -384,28 +510,33 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
               {editingLocation ? 'تعديل بيانات الموقع المحدد' : 'إضافة موقع تخزين جديد إلى النظام'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="locationNumber">رقم الموقع</Label>
               <Input 
                 id="locationNumber" 
-                value={formData.locationNumber}
+                value={formData.number}
                 disabled
                 className="bg-gray-50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="locationName">اسم الموقع *</Label>
+              <Label htmlFor="locationName">اسم الموقع <span className="text-red-600">*</span></Label>
               <Input 
                 id="locationName" 
                 placeholder="أدخل اسم الموقع"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+                disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="locationType">نوع الموقع *</Label>
-              <Select value={formData.type} onValueChange={(value: Location['type']) => setFormData(prev => ({...prev, type: value}))}>
+              <Label htmlFor="locationType">نوع الموقع <span className="text-red-600">*</span></Label>
+              <Select 
+                value={formData.type} 
+                onValueChange={(value) => setFormData(prev => ({...prev, type: value}))}
+                disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="اختر نوع الموقع" />
                 </SelectTrigger>
@@ -417,13 +548,14 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="capacity">السعة القصوى *</Label>
+              <Label htmlFor="capacity">السعة القصوى <span className="text-red-600">*</span></Label>
               <Input 
                 id="capacity" 
                 type="number" 
                 placeholder="أدخل السعة القصوى"
                 value={formData.capacity}
                 onChange={(e) => setFormData(prev => ({...prev, capacity: e.target.value}))}
+                disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -434,24 +566,42 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
                 placeholder="أدخل المخزون الحالي"
                 value={formData.currentUsage}
                 onChange={(e) => setFormData(prev => ({...prev, currentUsage: e.target.value}))}
+                disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
               />
             </div>
-            <div className="col-span-2 space-y-2">
+            <div className="md:col-span-2 space-y-2">
               <Label htmlFor="address">العنوان</Label>
               <Textarea 
                 id="address" 
                 placeholder="أدخل عنوان الموقع (اختياري)"
                 value={formData.address}
                 onChange={(e) => setFormData(prev => ({...prev, address: e.target.value}))}
+                disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
               />
             </div>
           </div>
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDialogOpen(false)}
+              className="w-full sm:w-auto"
+              disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
+            >
               إلغاء
             </Button>
-            <Button onClick={handleSaveLocation}>
-              {editingLocation ? 'حفظ التعديل' : 'إضافة الموقع'}
+            <Button 
+              onClick={handleSaveLocation}
+              className="w-full sm:w-auto"
+              disabled={addLocationMutation.isLoading || updateLocationMutation.isLoading}
+            >
+              {addLocationMutation.isLoading || updateLocationMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {editingLocation ? 'جاري التحديث...' : 'جاري الإضافة...'}
+                </>
+              ) : (
+                editingLocation ? 'حفظ التعديل' : 'إضافة الموقع'
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -468,55 +618,34 @@ export default function Locations({ quickActionTrigger }: LocationsProps) {
               هل أنت متأكد من حذف هذا الموقع؟
             </DialogDescription>
           </DialogHeader>
-          
-          {deleteError && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>لا يمكن الحذف</AlertTitle>
-              <AlertDescription>
-                <p className="mb-2">{deleteError.message}</p>
-                {deleteError.relatedEntities && deleteError.relatedEntities.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {deleteError.relatedEntities.map((entity, index) => (
-                      <div key={index} className="bg-red-50 p-3 rounded">
-                        <p className="font-semibold text-sm mb-1">
-                          {entity.type} ({entity.count})
-                        </p>
-                        <ul className="text-xs space-y-1">
-                          {entity.items.map((item, idx) => (
-                            <li key={idx}>• {item}</li>
-                          ))}
-                          {entity.count > 5 && (
-                            <li className="text-gray-600">... و {entity.count - 5} أخرى</li>
-                          )}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
 
-          <div className="flex justify-end space-x-2 space-x-reverse mt-4">
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
             <Button 
               variant="outline" 
               onClick={() => {
                 setDeleteDialogOpen(false);
-                setDeleteError(null);
                 setLocationToDelete(null);
               }}
+              className="w-full sm:w-auto"
+              disabled={deleteLocationMutation.isLoading}
             >
               إلغاء
             </Button>
-            {!deleteError && (
-              <Button 
-                variant="destructive" 
-                onClick={confirmDelete}
-              >
-                تأكيد الحذف
-              </Button>
-            )}
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              className="w-full sm:w-auto"
+              disabled={deleteLocationMutation.isLoading}
+            >
+              {deleteLocationMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  جاري الحذف...
+                </>
+              ) : (
+                'تأكيد الحذف'
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -9,64 +9,89 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, Search, Edit, Trash2, Package, AlertTriangle, TrendingUp } from 'lucide-react';
-import { Item, Location } from '@/types';
-import { generateItemNumber } from '@/lib/autoNumber';
-import { SupabaseItemsStorage, SupabaseLocationsStorage } from '@/lib/supabaseStorage';
-import { useCurrency } from '@/hooks/useCurrency';
-import { formatWithBaseCurrency } from '@/lib/currencyUtils';
+import { Plus, Search, Edit, Trash2, Package, AlertTriangle, TrendingUp, RefreshCw } from 'lucide-react';
+// import { useGetAllItems, useAddItem, useUpdateItem, useDeleteItem, Item } from './ItemsAPI';
+import { useGetAllItems, useAddItem, useUpdateItem, useDeleteItem, Item } from '@/pages/API/ItemsAPI';
+import { useGetAllLocations, Location } from '@/pages/API/LocationsAPI';
+import { useGetAllCurrencies } from '@/pages/API/CurrenciesAPI';
+import { toast } from 'sonner';
 
 interface ItemsProps {
   quickActionTrigger?: { action: string; timestamp: number } | null;
 }
 
 export default function Items({ quickActionTrigger }: ItemsProps) {
-  const [items, setItems] = useState<Item[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
+  // APIs
+  const { 
+    data: itemsData, 
+    isLoading: itemsLoading, 
+    error: itemsError, 
+    refetch: refetchItems,
+    isError: itemsIsError 
+  } = useGetAllItems();
+  
+  const { 
+    data: locationsData, 
+    isLoading: locationsLoading 
+  } = useGetAllLocations();
+  
+  const { 
+    data: currenciesData 
+  } = useGetAllCurrencies();
+
+  const addItemMutation = useAddItem();
+  const updateItemMutation = useUpdateItem();
+  const deleteItemMutation = useDeleteItem();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<{
-    message: string;
-    relatedEntities?: Array<{ type: string; count: number; items: string[] }>;
-  } | null>(null);
-
-  const { currencies, baseCurrency } = useCurrency();
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const [formData, setFormData] = useState({
+    number: '',
     name: '',
-    itemNumber: '',
     description: '',
     quantity: '0',
     unit: '',
     price: '',
     costPrice: '',
     category: '',
-    locationId: 'none'
+    locationId: '',
+    currencyId: ''
   });
 
-  const safeToLocaleString = (value: number | undefined | null): string => {
-    if (value === undefined || value === null || isNaN(value)) {
-      return '0';
-    }
-    return value.toLocaleString('ar');
-  };
+  // Data
+  const items: Item[] = Array.isArray(itemsData) ? itemsData : [];
+  const locations: Location[] = Array.isArray(locationsData) ? locationsData : [];
+  const currencies = Array.isArray(currenciesData) ? currenciesData : [];
+  const baseCurrency = currencies.find(c => c.isBase);
 
-  const safeToFixed = (value: number | undefined | null, decimals: number = 1): string => {
-    if (value === undefined || value === null || isNaN(value)) {
-      return '0.0';
+  const loading = itemsLoading || locationsLoading;
+
+  useEffect(() => {
+    if (quickActionTrigger?.action === 'add-item') {
+      handleAddItem();
     }
-    return value.toFixed(decimals);
+  }, [quickActionTrigger]);
+
+  const filteredItems = items.filter(item =>
+    item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item?.number?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getLocationName = (locationId?: number) => {
+    if (!locationId) return 'غير محدد';
+    const location = locations.find(l => l.id === locationId);
+    return location?.name || 'غير محدد';
   };
 
   const formatPrice = (amount: number | undefined | null): string => {
     if (amount === undefined || amount === null || isNaN(amount)) {
       return baseCurrency ? `0 ${baseCurrency.symbol}` : '0';
     }
-    return formatWithBaseCurrency(amount, currencies);
+    return `${amount.toLocaleString('ar')} ${baseCurrency?.symbol || ''}`;
   };
 
   const calculateProfitMetrics = (price: number, costPrice?: number) => {
@@ -97,77 +122,29 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     return 'destructive';
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [itemsData, locationsData] = await Promise.all([
-        SupabaseItemsStorage.getAll(),
-        SupabaseLocationsStorage.getAll()
-      ]);
-      setItems(itemsData);
-      setLocations(locationsData);
-    } catch (error) {
-      console.error('خطأ في تحميل البيانات:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-
-    const unsubscribeItems = SupabaseItemsStorage.subscribe((newItems) => {
-      setItems(newItems);
-    });
-
-    const unsubscribeLocations = SupabaseLocationsStorage.subscribe((newLocations) => {
-      setLocations(newLocations);
-    });
-
-    return () => {
-      unsubscribeItems();
-      unsubscribeLocations();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (quickActionTrigger?.action === 'add-item') {
-      handleAddItem();
-    }
-  }, [quickActionTrigger]);
-
-  const filteredItems = items.filter(item =>
-    item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item?.itemNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const getLocationName = (locationId?: string) => {
-    if (!locationId) return 'غير محدد';
-    const location = locations.find(l => l?.id === locationId);
-    return location?.name || 'غير محدد';
-  };
-
   const resetForm = () => {
     setFormData({
+      number: '',
       name: '',
-      itemNumber: '',
       description: '',
       quantity: '0',
       unit: '',
       price: '',
       costPrice: '',
       category: '',
-      locationId: 'none'
+      locationId: '',
+      currencyId: baseCurrency?.id.toString() || ''
     });
   };
 
-  const handleAddItem = async () => {
+  const handleAddItem = () => {
     setEditingItem(null);
     resetForm();
-    const itemNumber = await generateItemNumber();
+    // توليد رقم صنف تلقائي (يمكن استبداله بدالة توليد أرقام)
+    const itemNumber = `ITEM-${Date.now()}`;
     setFormData(prev => ({
       ...prev,
-      itemNumber
+      number: itemNumber
     }));
     setIsDialogOpen(true);
   };
@@ -175,61 +152,82 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
   const handleEditItem = (item: Item) => {
     setEditingItem(item);
     setFormData({
-      name: item?.name || '',
-      itemNumber: item?.itemNumber || '',
-      description: item?.description || '',
-      quantity: (item?.quantity || 0).toString(),
-      unit: item?.unit || '',
-      price: (item?.price || 0).toString(),
-      costPrice: (item?.costPrice || 0).toString(),
-      category: item?.category || '',
-      locationId: item?.locationId || 'none'
+      number: item.number,
+      name: item.name,
+      description: item.description || '',
+      quantity: item.quantity.toString(),
+      unit: item.unit,
+      price: item.price.toString(),
+      costPrice: item.costPrice?.toString() || '',
+      category: item.category || '',
+      locationId: item.locationId?.toString() || '',
+      currencyId: item.currencyId?.toString() || baseCurrency?.id.toString() || ''
     });
     setIsDialogOpen(true);
   };
 
   const handleSaveItem = async () => {
-    if (!formData.name || !formData.price) {
-      alert('يرجى ملء جميع الحقول المطلوبة (الاسم والسعر)');
+    if (!formData.name?.trim() || !formData.price) {
+      toast.error('يرجى ملء جميع الحقول المطلوبة (الاسم والسعر)');
       return;
     }
 
+    const price = parseFloat(formData.price);
+    const costPrice = formData.costPrice ? parseFloat(formData.costPrice) : undefined;
+    const quantity = parseInt(formData.quantity) || 0;
+
+    if (isNaN(price) || price < 0) {
+      toast.error('يرجى إدخال سعر صحيح');
+      return;
+    }
+
+    if (costPrice && (isNaN(costPrice) || costPrice < 0)) {
+      toast.error('يرجى إدخال سعر تكلفة صحيح');
+      return;
+    }
+
+    if (quantity < 0) {
+      toast.error('يرجى إدخال كمية صحيحة');
+      return;
+    }
+
+    const { profitMargin, profitAmount } = calculateProfitMetrics(price, costPrice);
+
+    const itemData = {
+      number: formData.number,
+      name: formData.name.trim(),
+      description: formData.description.trim() || undefined,
+      quantity,
+      unit: formData.unit.trim(),
+      price,
+      costPrice,
+      profitMargin,
+      profitAmount,
+      category: formData.category.trim() || undefined,
+      locationId: formData.locationId ? parseInt(formData.locationId) : undefined,
+      currencyId: formData.currencyId ? parseInt(formData.currencyId) : undefined
+    };
+
     try {
-      const price = parseFloat(formData.price) || 0;
-      const costPrice = formData.costPrice ? parseFloat(formData.costPrice) : undefined;
-      const { profitMargin, profitAmount } = calculateProfitMetrics(price, costPrice);
-
-      const itemData = {
-        name: formData.name,
-        itemNumber: formData.itemNumber,
-        description: formData.description,
-        quantity: parseInt(formData.quantity) || 0,
-        unit: formData.unit,
-        price,
-        costPrice,
-        profitMargin,
-        profitAmount,
-        category: formData.category,
-        locationId: formData.locationId === 'none' ? undefined : formData.locationId
-      };
-
       if (editingItem) {
-        await SupabaseItemsStorage.update(editingItem.id, itemData);
+        await updateItemMutation.mutateAsync({ 
+          id: editingItem.id, 
+          data: itemData 
+        });
       } else {
-        await SupabaseItemsStorage.add(itemData);
+        await addItemMutation.mutateAsync(itemData);
       }
 
       setIsDialogOpen(false);
       resetForm();
+      setEditingItem(null);
     } catch (error) {
       console.error('خطأ في حفظ الصنف:', error);
-      alert('حدث خطأ أثناء حفظ الصنف');
     }
   };
 
-  const handleDeleteItem = async (itemId: string) => {
+  const handleDeleteItem = (itemId: number) => {
     setItemToDelete(itemId);
-    setDeleteError(null);
     setDeleteDialogOpen(true);
   };
 
@@ -237,24 +235,16 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
     if (!itemToDelete) return;
 
     try {
-      const result = await SupabaseItemsStorage.delete(itemToDelete);
-      
-      if (result.success) {
-        setDeleteDialogOpen(false);
-        setItemToDelete(null);
-        setDeleteError(null);
-      } else {
-        setDeleteError({
-          message: result.message,
-          relatedEntities: result.relatedEntities
-        });
-      }
+      await deleteItemMutation.mutateAsync(itemToDelete);
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
     } catch (error) {
       console.error('خطأ في حذف الصنف:', error);
-      setDeleteError({
-        message: 'حدث خطأ أثناء حذف الصنف'
-      });
     }
+  };
+
+  const handleRetry = () => {
+    refetchItems();
   };
 
   if (loading) {
@@ -264,6 +254,30 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">جاري تحميل البيانات...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (itemsIsError) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="text-red-500 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">حدث خطأ في تحميل البيانات</h3>
+            <p className="text-gray-600 mb-4">
+              {itemsError instanceof Error ? itemsError.message : 'تعذر تحميل بيانات الأصناف'}
+            </p>
+            <Button onClick={handleRetry} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -278,10 +292,25 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
             <p className="text-xs text-gray-500 mt-1">جميع الأسعار بـ {baseCurrency.name} ({baseCurrency.symbol})</p>
           )}
         </div>
-        <Button onClick={handleAddItem} className="w-full sm:w-auto flex items-center justify-center">
-          <Plus className="h-4 w-4 ml-2" />
-          إضافة صنف جديد
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline"
+            onClick={handleRetry}
+            className="flex items-center gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            تحديث
+          </Button>
+          <Button 
+            onClick={handleAddItem} 
+            className="flex items-center justify-center flex-1 sm:flex-none"
+            disabled={addItemMutation.isLoading}
+          >
+            <Plus className="h-4 w-4 ml-2" />
+            إضافة صنف جديد
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -328,26 +357,26 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               </TableHeader>
               <TableBody>
                 {filteredItems.map((item) => (
-                  <TableRow key={item?.id || Math.random()}>
-                    <TableCell className="font-medium">{item?.name || 'غير محدد'}</TableCell>
-                    <TableCell>{item?.itemNumber || 'غير محدد'}</TableCell>
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell>{item.number}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
+                      <Badge variant="outline">{item.category || 'غير محدد'}</Badge>
                     </TableCell>
-                    <TableCell>{getLocationName(item?.locationId)}</TableCell>
+                    <TableCell>{getLocationName(item.locationId)}</TableCell>
                     <TableCell>
-                      <span className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : ''}>
-                        {item?.quantity || 0} {item?.unit || ''}
+                      <span className={item.quantity < 20 ? 'text-red-600 font-semibold' : ''}>
+                        {item.quantity} {item.unit}
                       </span>
                     </TableCell>
-                    <TableCell>{formatPrice(item?.costPrice)}</TableCell>
-                    <TableCell className="font-semibold">{formatPrice(item?.price)}</TableCell>
+                    <TableCell>{formatPrice(item.costPrice)}</TableCell>
+                    <TableCell className="font-semibold">{formatPrice(item.price)}</TableCell>
                     <TableCell>
-                      {item?.profitMargin !== undefined && item?.profitMargin !== null ? (
+                      {item.profitMargin !== undefined && item.profitMargin !== null ? (
                         <div className="flex flex-col gap-1">
                           <Badge variant={getProfitBadgeVariant(item.profitMargin)} className="w-fit">
                             <TrendingUp className="h-3 w-3 ml-1" />
-                            {safeToFixed(item.profitMargin, 1)}%
+                            {Number(item.profitMargin).toFixed(1)}%
                           </Badge>
                           <span className={`text-xs ${getProfitColor(item.profitMargin)}`}>
                             {formatPrice(item.profitAmount)}
@@ -363,14 +392,16 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                           variant="outline"
                           size="sm"
                           onClick={() => handleEditItem(item)}
+                          disabled={updateItemMutation.isLoading}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteItem(item?.id || '')}
+                          onClick={() => handleDeleteItem(item.id)}
                           className="text-red-600 hover:text-red-700"
+                          disabled={deleteItemMutation.isLoading}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -385,44 +416,44 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
           {/* Mobile Cards */}
           <div className="md:hidden space-y-4 p-4">
             {filteredItems.map((item) => (
-              <Card key={item?.id || Math.random()} className="overflow-hidden">
+              <Card key={item.id} className="overflow-hidden">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{item?.name || 'غير محدد'}</h3>
-                      <p className="text-sm text-gray-500">{item?.itemNumber || 'غير محدد'}</p>
+                      <h3 className="font-semibold text-lg">{item.name}</h3>
+                      <p className="text-sm text-gray-500">{item.number}</p>
                     </div>
-                    <Badge variant="outline">{item?.category || 'غير محدد'}</Badge>
+                    <Badge variant="outline">{item.category || 'غير محدد'}</Badge>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-gray-500">الموقع:</span>
-                      <p className="font-medium">{getLocationName(item?.locationId)}</p>
+                      <p className="font-medium">{getLocationName(item.locationId)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">الكمية:</span>
-                      <p className={(item?.quantity || 0) < 20 ? 'text-red-600 font-semibold' : 'font-medium'}>
-                        {item?.quantity || 0} {item?.unit || ''}
+                      <p className={item.quantity < 20 ? 'text-red-600 font-semibold' : 'font-medium'}>
+                        {item.quantity} {item.unit}
                       </p>
                     </div>
                     <div>
                       <span className="text-gray-500">سعر التكلفة:</span>
-                      <p className="font-medium">{formatPrice(item?.costPrice)}</p>
+                      <p className="font-medium">{formatPrice(item.costPrice)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500">السعر:</span>
-                      <p className="font-medium text-lg">{formatPrice(item?.price)}</p>
+                      <p className="font-medium text-lg">{formatPrice(item.price)}</p>
                     </div>
                   </div>
 
-                  {item?.profitMargin !== undefined && item?.profitMargin !== null && (
+                  {item.profitMargin !== undefined && item.profitMargin !== null && (
                     <div className="pt-2 border-t">
                       <span className="text-gray-500 text-sm">هامش الربح:</span>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant={getProfitBadgeVariant(item.profitMargin)}>
                           <TrendingUp className="h-3 w-3 ml-1" />
-                          {safeToFixed(item.profitMargin, 1)}%
+                          {Number(item.profitMargin).toFixed(1)}%
                         </Badge>
                         <span className={`text-sm font-medium ${getProfitColor(item.profitMargin)}`}>
                           ({formatPrice(item.profitAmount)})
@@ -437,6 +468,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                       size="sm"
                       onClick={() => handleEditItem(item)}
                       className="flex-1"
+                      disabled={updateItemMutation.isLoading}
                     >
                       <Edit className="h-4 w-4 ml-1" />
                       تعديل
@@ -444,8 +476,9 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDeleteItem(item?.id || '')}
+                      onClick={() => handleDeleteItem(item.id)}
                       className="flex-1 text-red-600 hover:text-red-700"
+                      disabled={deleteItemMutation.isLoading}
                     >
                       <Trash2 className="h-4 w-4 ml-1" />
                       حذف
@@ -455,6 +488,14 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               </Card>
             ))}
           </div>
+
+          {filteredItems.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">
+                {searchTerm ? 'لا توجد أصناف تطابق البحث' : 'لا توجد أصناف مسجلة'}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -473,19 +514,20 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">اسم الصنف *</Label>
+              <Label htmlFor="name">اسم الصنف <span className="text-red-600">*</span></Label>
               <Input 
                 id="name" 
                 placeholder="أدخل اسم الصنف"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="itemNumber">الرقم المرجعي</Label>
+              <Label htmlFor="number">الرقم المرجعي</Label>
               <Input 
-                id="itemNumber" 
-                value={formData.itemNumber}
+                id="number" 
+                value={formData.number}
                 disabled
                 className="bg-gray-50"
               />
@@ -497,23 +539,28 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 placeholder="أدخل الفئة"
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({...prev, category: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="locationId">الموقع (اختياري)</Label>
-              <Select value={formData.locationId} onValueChange={(value) => setFormData(prev => ({...prev, locationId: value}))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الموقع" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">بدون موقع</SelectItem>
-                  {locations.map((location) => (
-                    <SelectItem key={location?.id} value={location?.id || ''}>
-                      {location?.name || 'غير محدد'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Select
+  value={formData.locationId}
+  onValueChange={(value) => setFormData(prev => ({ ...prev, locationId: value }))}
+>
+  <SelectTrigger>
+    <SelectValue placeholder="اختر الموقع" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="none">بدون موقع</SelectItem>
+    {locations.map((location) => (
+      <SelectItem key={location.id} value={location.id.toString()}>
+        {location.name}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+
             </div>
             <div className="space-y-2">
               <Label htmlFor="costPrice">
@@ -522,21 +569,25 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               <Input 
                 id="costPrice" 
                 type="number" 
+                step="0.01"
                 placeholder="أدخل سعر التكلفة"
                 value={formData.costPrice}
                 onChange={(e) => setFormData(prev => ({...prev, costPrice: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="price">
-                السعر * {baseCurrency && `(${baseCurrency.symbol})`}
+                السعر <span className="text-red-600">*</span> {baseCurrency && `(${baseCurrency.symbol})`}
               </Label>
               <Input 
                 id="price" 
                 type="number" 
+                step="0.01"
                 placeholder="أدخل السعر"
                 value={formData.price}
                 onChange={(e) => setFormData(prev => ({...prev, price: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             
@@ -570,6 +621,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 placeholder="مثال: قطعة، كجم"
                 value={formData.unit}
                 onChange={(e) => setFormData(prev => ({...prev, unit: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -580,6 +632,7 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 placeholder="أدخل الكمية"
                 value={formData.quantity}
                 onChange={(e) => setFormData(prev => ({...prev, quantity: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
             <div className="col-span-1 md:col-span-2 space-y-2">
@@ -589,15 +642,32 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
                 placeholder="أدخل وصف الصنف"
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
+                disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
               />
             </div>
           </div>
           <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="w-full sm:w-auto">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDialogOpen(false)}
+              className="w-full sm:w-auto"
+              disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
+            >
               إلغاء
             </Button>
-            <Button onClick={handleSaveItem} className="w-full sm:w-auto">
-              {editingItem ? 'حفظ التعديل' : 'إضافة الصنف'}
+            <Button 
+              onClick={handleSaveItem}
+              className="w-full sm:w-auto"
+              disabled={addItemMutation.isLoading || updateItemMutation.isLoading}
+            >
+              {addItemMutation.isLoading || updateItemMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {editingItem ? 'جاري التحديث...' : 'جاري الإضافة...'}
+                </>
+              ) : (
+                editingItem ? 'حفظ التعديل' : 'إضافة الصنف'
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -614,57 +684,34 @@ export default function Items({ quickActionTrigger }: ItemsProps) {
               هل أنت متأكد من حذف هذا الصنف؟
             </DialogDescription>
           </DialogHeader>
-          
-          {deleteError && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>لا يمكن الحذف</AlertTitle>
-              <AlertDescription>
-                <p className="mb-2">{deleteError.message}</p>
-                {deleteError.relatedEntities && deleteError.relatedEntities.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {deleteError.relatedEntities.map((entity, index) => (
-                      <div key={index} className="bg-red-50 p-3 rounded">
-                        <p className="font-semibold text-sm mb-1">
-                          {entity.type} ({entity.count})
-                        </p>
-                        <ul className="text-xs space-y-1">
-                          {entity.items.map((item, idx) => (
-                            <li key={idx}>• {item}</li>
-                          ))}
-                          {entity.count > 5 && (
-                            <li className="text-gray-600">... و {entity.count - 5} أخرى</li>
-                          )}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
 
           <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
             <Button 
               variant="outline" 
               onClick={() => {
                 setDeleteDialogOpen(false);
-                setDeleteError(null);
                 setItemToDelete(null);
               }}
               className="w-full sm:w-auto"
+              disabled={deleteItemMutation.isLoading}
             >
               إلغاء
             </Button>
-            {!deleteError && (
-              <Button 
-                variant="destructive" 
-                onClick={confirmDelete}
-                className="w-full sm:w-auto"
-              >
-                تأكيد الحذف
-              </Button>
-            )}
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              className="w-full sm:w-auto"
+              disabled={deleteItemMutation.isLoading}
+            >
+              {deleteItemMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  جاري الحذف...
+                </>
+              ) : (
+                'تأكيد الحذف'
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
