@@ -3,11 +3,9 @@
   "type": "module",
   "packageManager": "pnpm@8.10.0",
   "scripts": {
-    "start": "vite preview",
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint --quiet ./src",
-    "preview": "vite preview"
+  "dev": "vite",
+  "build": "vite build",
+  "start": "vite preview"
     
   },
   "dependencies": {
