@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { viteSourceLocator } from "@metagptx/vite-plugin-source-locator";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   plugins: [
     viteSourceLocator({ prefix: "mgx" }),
     react(),
@@ -12,6 +12,6 @@ export default defineConfig(({ mode }) => ({
     alias: { "@": path.resolve(__dirname, "./src") },
   },
   build: {
-    outDir: "dist", 
-  },
-}));
+    outDir: "dist",
+  }
+});

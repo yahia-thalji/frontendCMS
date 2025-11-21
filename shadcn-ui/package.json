@@ -1,11 +1,12 @@
 {
-  "name": "shadcnui",
-  "type": "module",
-  "packageManager": "pnpm@8.10.0",
+  "name": "frontendcms",
+  "version": "1.0.0",
+  "private": true,
   "scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "start": "serve -s dist"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "serve -s dist"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
