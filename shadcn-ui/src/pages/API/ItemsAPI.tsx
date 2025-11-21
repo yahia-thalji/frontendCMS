@@ -20,7 +20,7 @@ export interface Item {
   updatedAt: string;
 }
 
-const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const BASE = import.meta.env.VITE_API_BASE_URL || 'https://backendcms-production-e082.up.railway.app/api';
 
 /* -------------------------------------------------------------------------- */
 /*                         GET All Items                                     */
